@@ -1,0 +1,149 @@
+//
+//  ImageContainer.hpp
+//  ImageToolsC
+//
+//  Created by Evgenij Lutz on 04.09.25.
+//
+
+#ifndef ImageContainerC_H
+#define ImageContainerC_H
+
+#if defined __cplusplus
+
+#include <swift/bridging>
+#include <atomic>
+
+
+#if !defined nonnull
+#define nonnull __nonnull
+#endif
+
+#if !defined nullable
+#define nullable __nullable
+#endif
+
+
+enum class ImagePixelChannel: long {
+    /// Red.
+    r = 0,
+    
+    /// Green.
+    g = 1,
+    
+    /// Bliue.
+    b = 2,
+    
+    /// Alpha.
+    a = 3
+};
+
+
+enum class PixelComponentType: long {
+    /// Signed 8-bit integer.
+    sint8 = 0,
+    
+    /// Unsigned 8-bit integer.
+    uint8
+};
+
+
+long getPixelComponentTypeSize(PixelComponentType type);
+
+
+struct ImagePixelComponent {
+    /// Channel name.
+    ImagePixelChannel channel;
+    
+    /// Component type.
+    PixelComponentType type;
+};
+
+
+/// Pixel format.
+///
+/// Contains information of every channel.
+struct ImagePixelFormat {
+    ImagePixelComponent components[4];
+    long numComponents;
+    
+    /// How many bytes does one pixel take.
+    long size;
+    
+    static const ImagePixelFormat rgba8Unorm;
+    
+    bool validate() const;
+    
+    /// Checks if the pixel format consists of components of the same type.
+    bool isHomogeneous() const;
+};
+
+
+/// Progress callback.
+///
+/// Nofities about current operation's progress.
+///
+/// - Returns: `true` if the operation should be calcelled, otherwise `false`.
+typedef bool (* ImageToolsProgressCallback)(void* nullable userInfo, float progress);
+
+
+/// Image container.
+class ImageContainer final {
+private:
+    std::atomic<size_t> _referenceCounter;
+    
+    ImagePixelFormat _pixelFormat;
+    
+    char* nonnull _contents;
+    long _width;
+    long _height;
+    long _depth;
+    
+    /// ICC color profile data.
+    ///
+    /// If `null`, then it's assumed that image has the `sRGB` color space.
+    char* nullable _iccProfileData;
+    
+    /// Size of the ICC color profile data ``ImageContainer/_iccData-property``.
+    ///
+    /// Ignored if ``ImageContainer/_iccData-property`` is `null`.
+    long _iccProfileDataLength;
+    
+    
+    friend ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) SWIFT_RETURNS_UNRETAINED;
+    friend void ImageContainerRelease(ImageContainer* nullable image);
+    
+    ImageContainer(ImagePixelFormat pixelFormat, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
+    ~ImageContainer();
+    
+public:
+    ImageContainer* nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
+    
+    ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
+    
+    char* nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
+    long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
+    long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
+    long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
+    
+    // TODO: Implement std::span for swift 6.2
+    const char* nonnull getICCProfileData() SWIFT_COMPUTED_PROPERTY { return _iccProfileData; }
+    long getICCProfileDataLength() SWIFT_COMPUTED_PROPERTY { return _iccProfileDataLength; }
+    void setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength);
+    
+    /// Creates a copy of the image container.
+    [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function, darling.")]]
+    ImageContainer* nonnull copy() SWIFT_RETURNS_RETAINED;
+    
+    
+    /// Converts pixel format if possible.
+    bool convertPixelFormat(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
+    
+//    /// Swizzles pixel components.
+//    ///
+//    /// - Returns: `false` if `targetPixelFormat`'s components do not match pixel format components of this image. `true` if succeeds.
+//    bool swizzle(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
+} SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease);
+
+#endif // __cplusplus
+
+#endif // ImageContainerC_H
