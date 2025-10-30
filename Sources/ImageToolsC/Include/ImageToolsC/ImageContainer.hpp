@@ -5,10 +5,7 @@
 //  Created by Evgenij Lutz on 04.09.25.
 //
 
-#ifndef ImageContainerC_H
-#define ImageContainerC_H
-
-#if defined __cplusplus
+#pragma once
 
 #include <swift/bridging>
 #include <atomic>
@@ -43,7 +40,9 @@ enum class PixelComponentType: long {
     sint8 = 0,
     
     /// Unsigned 8-bit integer.
-    uint8
+    uint8,
+    
+    float16
 };
 
 
@@ -56,6 +55,9 @@ struct ImagePixelComponent {
     
     /// Component type.
     PixelComponentType type;
+    
+    
+    bool operator == (const ImagePixelComponent& other) const;
 };
 
 
@@ -63,8 +65,11 @@ struct ImagePixelComponent {
 ///
 /// Contains information of every channel.
 struct ImagePixelFormat {
-    ImagePixelComponent components[4];
+    /// Number of components
     long numComponents;
+    
+    /// Components
+    ImagePixelComponent components[4];
     
     /// How many bytes does one pixel take.
     long size;
@@ -75,6 +80,9 @@ struct ImagePixelFormat {
     
     /// Checks if the pixel format consists of components of the same type.
     bool isHomogeneous() const;
+    
+    
+    bool operator == (const ImagePixelFormat& other) const;
 };
 
 
@@ -92,6 +100,8 @@ private:
     std::atomic<size_t> _referenceCounter;
     
     ImagePixelFormat _pixelFormat;
+    bool _linear;
+    bool _hdr;
     
     char* nonnull _contents;
     long _width;
@@ -112,15 +122,19 @@ private:
     friend ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) SWIFT_RETURNS_UNRETAINED;
     friend void ImageContainerRelease(ImageContainer* nullable image);
     
-    ImageContainer(ImagePixelFormat pixelFormat, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
+    ImageContainer(ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
     ~ImageContainer();
     
 public:
-    ImageContainer* nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* nullable load(const char* nullable path) SWIFT_RETURNS_RETAINED;
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
+    bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
+    bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
     
     char* nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
+    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.size; }
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
     long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
@@ -131,7 +145,7 @@ public:
     void setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength);
     
     /// Creates a copy of the image container.
-    [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function, darling.")]]
+    [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* nonnull copy() SWIFT_RETURNS_RETAINED;
     
     
@@ -143,7 +157,3 @@ public:
 //    /// - Returns: `false` if `targetPixelFormat`'s components do not match pixel format components of this image. `true` if succeeds.
 //    bool swizzle(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
 } SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease);
-
-#endif // __cplusplus
-
-#endif // ImageContainerC_H

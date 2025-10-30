@@ -5,9 +5,10 @@
 //  Created by Evgenij Lutz on 04.09.25.
 //
 
-#ifndef ImageToolsC_H
-#define ImageToolsC_H
+#pragma once
 
-#include "ImageContainer.hpp"
+#if defined __cplusplus
 
-#endif // ImageToolsC_H
+#include <ImageToolsC/ImageContainer.hpp>
+
+#endif

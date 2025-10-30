@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.2
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -26,21 +26,20 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "ImageToolsC"
+            name: "ImageToolsC",
+            cxxSettings: [
+                //.enableWarning("return-type"),
+                .enableWarning("all")
+            ]
         ),
         .target(
             name: "ImageTools",
             dependencies: [
                 .target(name: "ImageToolsC")
             ],
-            //cSettings: [
-            //    .unsafeFlags(["-Wall"])
-            //],
-            //cxxSettings: [
-            //    .unsafeFlags(["-Wall"])
-            //],
             swiftSettings: [
-                .interoperabilityMode(.Cxx)
+                .interoperabilityMode(.Cxx),
+                //.strictMemorySafety()
             ]
         ),
     ],
