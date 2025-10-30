@@ -14,10 +14,26 @@ enum ImageToolsError: Error {
 }
 
 
+public extension PixelComponentType {
+    /// Returns size in bytes
+    var size: Int {
+        getPixelComponentTypeSize(self)
+    }
+}
+
+
+public extension ImagePixelComponent {
+    /// Returns size in bytes
+    var size: Int {
+        getPixelComponentTypeSize(type)
+    }
+}
+
+
 public extension ImageContainer {
     static func load(path: String) throws -> ImageContainer {
         let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.load(cString)
+            ImageContainer.__loadUnsafe(cString)
         }
         
         guard let image else {
@@ -43,56 +59,85 @@ public extension ImageContainer {
             
             let contents = Data(bytes: contents, count: contentsSize)
             guard let dataProvider = CGDataProvider(data: contents as CFData) else {
-                throw ImageToolsError.other("No data provider :(")
+                throw ImageToolsError.other("Something is wrong with image data")
             }
             
             let componentType = pixelFormat.components.0.type
-            let colorSpaceName: CFString = try {
-                switch componentType {
-                case .sint8, .uint8:
-                    if linear {
-                        if hdr {
-                            return CGColorSpace.extendedLinearSRGB
-                        }
-                        else {
-                            return CGColorSpace.linearSRGB
-                        }
-                    }
-                    else {
-                        if hdr {
-                            return CGColorSpace.extendedSRGB
-                        }
-                        else {
-                            return CGColorSpace.sRGB
-                        }
-                    }
-                    
-                case .float16:
-                    if linear {
-                        if hdr {
-                            return CGColorSpace.extendedLinearDisplayP3
-                        }
-                        else {
-                            return CGColorSpace.linearDisplayP3
-                        }
-                    }
-                    else {
-                        if hdr {
-                            return CGColorSpace.extendedDisplayP3
-                        }
-                        else {
-                            return CGColorSpace.displayP3
-                        }
-                    }
-                    
-                default:
-                    throw ImageToolsError.other("Unknown component type: \(componentType.rawValue)")
-                }
-            }()
             
-            guard let colorSpace = CGColorSpace(name: colorSpaceName) else {
-                throw ImageToolsError.other("No color space :(")
-            }
+            let colorProfile: CGColorSpace = try {
+                // Check if there is iCC profile
+                if let iccProfileData, iccProfileDataLength > 0 {
+                    let iccProfileData = Data(bytes: iccProfileData, count: iccProfileDataLength)
+                    if let colorProfile = CGColorSpace(iccData: iccProfileData as CFData) {
+                        return colorProfile
+                    }
+                }
+                
+                let colorSpaceName: CFString = {
+                    struct ColorSpaceNames {
+                        let linearHdr: CFString
+                        let linear: CFString
+                        let gammaHdr: CFString
+                        let gamma: CFString
+                    }
+                    
+                    let sRGB = ColorSpaceNames(
+                        linearHdr: CGColorSpace.extendedLinearSRGB,
+                        linear: CGColorSpace.linearSRGB,
+                        gammaHdr: CGColorSpace.extendedSRGB,
+                        gamma: CGColorSpace.sRGB
+                    )
+                    
+                    let p3 = ColorSpaceNames(
+                        linearHdr: CGColorSpace.extendedLinearDisplayP3,
+                        linear: CGColorSpace.linearDisplayP3,
+                        gammaHdr: CGColorSpace.extendedDisplayP3,
+                        gamma: CGColorSpace.displayP3
+                    )
+                    
+                    let unknown = ColorSpaceNames(
+                        linearHdr: CGColorSpace.genericRGBLinear,
+                        linear: CGColorSpace.genericRGBLinear,
+                        gammaHdr: CGColorSpace.genericRGBLinear,
+                        gamma: CGColorSpace.genericRGBLinear
+                    )
+                    
+                    let names: ColorSpaceNames = switch colorSpace {
+                        //case .unknown: unknown
+                    case .sRGB: sRGB
+                    case .p3: p3
+                    default:
+                        switch componentType {
+                        case .sint8, .uint8: sRGB
+                        case .float16: p3
+                        default: unknown
+                        }
+                    }
+                    
+                    if linear {
+                        if hdr {
+                            return names.linearHdr
+                        }
+                        else {
+                            return names.linear
+                        }
+                    }
+                    else {
+                        if hdr {
+                            return names.gammaHdr
+                        }
+                        else {
+                            return names.gamma
+                        }
+                    }
+                }()
+                
+                guard let colorProfile = CGColorSpace(name: colorSpaceName) else {
+                    throw ImageToolsError.other("No color space :(")
+                }
+                
+                return colorProfile
+            }()
             
             let numComponents = Int(pixelFormat.numComponents)
             let alphaMask: UInt32
@@ -137,7 +182,7 @@ public extension ImageContainer {
                 bitsPerComponent: componentSize * 8,
                 bitsPerPixel: componentSize * 8 * numComponents,
                 bytesPerRow: width * componentSize * numComponents,
-                space: colorSpace,
+                space: colorProfile,
                 bitmapInfo: .init(rawValue: componentMask | orderMask | alphaMask),
                 provider: dataProvider,
                 decode: nil,

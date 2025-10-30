@@ -25,8 +25,9 @@
 
 long getPixelComponentTypeSize(PixelComponentType type) {
     long sizes[] = {
-        8,
-        8
+        1,
+        1,
+        2
     };
     
     return sizes[static_cast<long>(type)];
@@ -84,7 +85,7 @@ bool ImagePixelFormat::validate() const {
             
             // Update used channel and pixel size
             usedChannels[channelIndex] = true;
-            bits += getPixelComponentTypeSize(channel.type);
+            bits += getPixelComponentTypeSize(channel.type) * 8;
             
             // So far so good
             valid = true;
@@ -171,8 +172,9 @@ void ImageContainerRelease(ImageContainer* nullable image) {
 }
 
 
-ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength):
+ImageContainer::ImageContainer(ImageContainerColorSpace colorSpace, ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength):
 _referenceCounter(1),
+_colorSpace(colorSpace),
 _pixelFormat(pixelFormat),
 _linear(linear),
 _hdr(hdr),
@@ -203,7 +205,7 @@ ImageContainer* nonnull ImageContainer::rgba8Unorm(long width, long height) {
     auto contents = new char[contentsSize];
     std::memset(contents, 0xFF, contentsSize);
     
-    return new ImageContainer(pixelFormat, true, false, contents, width, height, 1, nullptr, 0);
+    return new ImageContainer(ImageContainerColorSpace::unknown, pixelFormat, true, false, contents, width, height, 1, nullptr, 0);
 }
 
 
@@ -265,7 +267,7 @@ ImageContainer* nullable ImageContainer::load(const char* nullable path) {
     
     stbi_image_free(components);
     
-    return new ImageContainer(pixelFormat, true, isHdr, contents, width, height, 1, nullptr, 0);
+    return new ImageContainer(ImageContainerColorSpace::unknown, pixelFormat, true, isHdr, contents, width, height, 1, nullptr, 0);
 }
 
 
@@ -300,7 +302,7 @@ ImageContainer* nonnull ImageContainer::copy() {
     }
     
     // Create a new ImageContainer instance
-    return new ImageContainer(_pixelFormat, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
+    return new ImageContainer(_colorSpace, _pixelFormat, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
 }
 
 
@@ -364,7 +366,7 @@ bool ImageContainer::convertPixelFormat(ImagePixelFormat targetPixelFormat, void
         
         for (auto componentIndex = 0; componentIndex < _pixelFormat.numComponents; componentIndex++) {
             auto& component = _pixelFormat.components[componentIndex];
-            auto componentBitSize = getPixelComponentTypeSize(component.type);
+            auto componentBitSize = getPixelComponentTypeSize(component.type) * 8;
             switch (component.type) {
                 case PixelComponentType::sint8:
                     fetchSteps[componentIndex].init(bitOffset, componentBitSize, [](auto data) {

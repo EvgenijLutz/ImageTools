@@ -20,6 +20,14 @@
 #endif
 
 
+enum class ImageContainerColorSpace: long {
+    unknown = 0,
+    sRGB = 1,
+    p3 = 2,
+    customICCProfile = 3
+};
+
+
 enum class ImagePixelChannel: long {
     /// Red.
     r = 0,
@@ -46,6 +54,7 @@ enum class PixelComponentType: long {
 };
 
 
+/// Returns ``PixelComponentType``'s size in bytes
 long getPixelComponentTypeSize(PixelComponentType type);
 
 
@@ -99,6 +108,8 @@ class ImageContainer final {
 private:
     std::atomic<size_t> _referenceCounter;
     
+    ImageContainerColorSpace _colorSpace;
+    
     ImagePixelFormat _pixelFormat;
     bool _linear;
     bool _hdr;
@@ -122,12 +133,14 @@ private:
     friend ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) SWIFT_RETURNS_UNRETAINED;
     friend void ImageContainerRelease(ImageContainer* nullable image);
     
-    ImageContainer(ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
+    ImageContainer(ImageContainerColorSpace colorSpace, ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
     ~ImageContainer();
     
 public:
     static ImageContainer* nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* nullable load(const char* nullable path) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* nullable load(const char* nullable path) SWIFT_NAME(__loadUnsafe(_:)) SWIFT_RETURNS_RETAINED;
+    
+    ImageContainerColorSpace getColorSpace() SWIFT_COMPUTED_PROPERTY { return _colorSpace; }
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
@@ -140,7 +153,7 @@ public:
     long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
     
     // TODO: Implement std::span for swift 6.2
-    const char* nonnull getICCProfileData() SWIFT_COMPUTED_PROPERTY { return _iccProfileData; }
+    const char* nullable getICCProfileData() SWIFT_COMPUTED_PROPERTY { return _iccProfileData; }
     long getICCProfileDataLength() SWIFT_COMPUTED_PROPERTY { return _iccProfileDataLength; }
     void setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength);
     
