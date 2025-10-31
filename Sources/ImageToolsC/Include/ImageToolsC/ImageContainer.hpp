@@ -7,19 +7,26 @@
 
 #pragma once
 
-#include <swift/bridging>
-#include <atomic>
+#include <ImageToolsC/Common.hpp>
 
 
-#if !defined nonnull
-#define nonnull __nonnull
-#endif
-
-#if !defined nullable
-#define nullable __nullable
-#endif
+class ImageContainer;
+class ImageEditor;
 
 
+enum ImageContainerErrorCode: long {
+    fileNotFound,
+    other
+};
+
+
+struct ImageContainerError {
+    ImageContainerErrorCode code;
+    char description[64];
+};
+
+
+// TODO: Get rid of this and use boolean for sRGB instead?
 enum class ImageContainerColorSpace: long {
     unknown = 0,
     sRGB = 1,
@@ -44,13 +51,11 @@ enum class ImagePixelChannel: long {
 
 
 enum class PixelComponentType: long {
-    /// Signed 8-bit integer.
-    sint8 = 0,
-    
     /// Unsigned 8-bit integer.
-    uint8,
+    uint8 = 0,
     
-    float16
+    /// Half-precision floating point value.
+    float16 = 1
 };
 
 
@@ -104,6 +109,8 @@ typedef bool (* ImageToolsProgressCallback)(void* nullable userInfo, float progr
 
 
 /// Image container.
+///
+/// - Note: This object is immutable and thus thread-safe. You can access its properties from any thread.
 class ImageContainer final {
 private:
     std::atomic<size_t> _referenceCounter;
@@ -130,11 +137,16 @@ private:
     long _iccProfileDataLength;
     
     
-    friend ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) SWIFT_RETURNS_UNRETAINED;
-    friend void ImageContainerRelease(ImageContainer* nullable image);
+    static ImageContainer* nullable _tryLoadPNG(const char* nonnull path);
+    
     
     ImageContainer(ImageContainerColorSpace colorSpace, ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength);
     ~ImageContainer();
+    
+    
+    friend class ImageEditor;
+    friend ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) SWIFT_RETURNS_UNRETAINED;
+    friend void ImageContainerRelease(ImageContainer* nullable image);
     
 public:
     static ImageContainer* nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
@@ -155,18 +167,10 @@ public:
     // TODO: Implement std::span for swift 6.2
     const char* nullable getICCProfileData() SWIFT_COMPUTED_PROPERTY { return _iccProfileData; }
     long getICCProfileDataLength() SWIFT_COMPUTED_PROPERTY { return _iccProfileDataLength; }
-    void setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength);
     
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* nonnull copy() SWIFT_RETURNS_RETAINED;
-    
-    
-    /// Converts pixel format if possible.
-    bool convertPixelFormat(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
-    
-//    /// Swizzles pixel components.
-//    ///
-//    /// - Returns: `false` if `targetPixelFormat`'s components do not match pixel format components of this image. `true` if succeeds.
-//    bool swizzle(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
-} SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease);
+}
+SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease)
+SWIFT_UNCHECKED_SENDABLE;

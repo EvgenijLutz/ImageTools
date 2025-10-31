@@ -3,6 +3,16 @@
 
 import PackageDescription
 
+
+let libPngPackageDependency: Package.Dependency = {
+#if true
+    .package(url: "https://github.com/EvgenijLutz/LibPNG.git", branch: "main")
+#else
+    .package(name: "LibPNG", path: "../LibPNG")
+#endif
+}()
+
+
 let package = Package(
     name: "ImageTools",
     // See the "Minimum Deployment Version for Reference Types Imported from C++":
@@ -24,9 +34,15 @@ let package = Package(
             targets: ["ImageTools"]
         ),
     ],
+    dependencies: [
+        libPngPackageDependency,
+    ],
     targets: [
         .target(
             name: "ImageToolsC",
+            dependencies: [
+                .product(name: "LibPNGC", package: "LibPNG")
+            ],
             cxxSettings: [
                 //.enableWarning("return-type"),
                 .enableWarning("all")

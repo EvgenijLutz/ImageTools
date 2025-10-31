@@ -6,7 +6,7 @@
 //
 
 #include <ImageToolsC/ImageContainer.hpp>
-#include <assert.h>
+#include <LibPNGC/LibPNGC.hpp>
 
 
 #if __has_include(<TargetConditionals.h>)
@@ -23,9 +23,46 @@
 #include "stb_image.h"
 
 
+template <typename SourceType, typename DestinationType>
+struct PixelInfo {
+    union Value {
+        SourceType sourceTypeValue;
+        unsigned char bytes[sizeof(SourceType)];
+    };
+    Value _value;
+    
+    // Sanity check
+    static_assert(sizeof(Value) == sizeof(SourceType), "Source and destination sizes should match");
+    
+    DestinationType convert(bool littleEndian) const {
+        // Copy the value
+        auto v = _value;
+        
+        // Swap bytes instead of manually bit shift to make the value little endian
+        if (littleEndian == false) {
+            constexpr auto numBytes = sizeof(SourceType);
+            constexpr auto halfSize = numBytes / 2;
+            constexpr auto lastByteIndex = numBytes - 1;
+            for (auto byteIndex = 0; byteIndex < halfSize; byteIndex++) {
+                auto byte0 = v.bytes[byteIndex];
+                auto byte1 = v.bytes[lastByteIndex - byteIndex];
+                v.bytes[byteIndex] = byte1;
+                v.bytes[lastByteIndex - byteIndex] = byte0;
+            }
+        }
+        
+        // Cast to double - takes more space, produces less precision errors
+        auto value = static_cast<double>(v.sourceTypeValue);
+        
+        // Cast to the destination type
+        static auto sourceMax = std::numeric_limits<SourceType>::max();
+        return static_cast<DestinationType>(value / static_cast<double>(sourceMax));
+    }
+};
+
+
 long getPixelComponentTypeSize(PixelComponentType type) {
     long sizes[] = {
-        1,
         1,
         2
     };
@@ -196,6 +233,8 @@ ImageContainer::~ImageContainer() {
     if (_iccProfileData) {
         delete [] _iccProfileData;
     }
+    
+    printf("Byeee\n");
 }
 
 
@@ -209,7 +248,123 @@ ImageContainer* nonnull ImageContainer::rgba8Unorm(long width, long height) {
 }
 
 
+ImageContainer* nullable ImageContainer::_tryLoadPNG(const char* nonnull path) {
+    auto isPng = PNGImage::checkIfPNG(path);
+    if (isPng == false) {
+        return nullptr;
+    }
+    
+    auto png = PNGImage::open(path);
+    if (png == nullptr) {
+        return nullptr;
+    }
+    
+    
+    auto colorSpace = png->getIsSRGB() ? ImageContainerColorSpace::sRGB : ImageContainerColorSpace::unknown;
+    
+    auto numComponents = png->getNumComponents();
+    auto bitsPerComponent = png->getBitsPerComponent();
+    if (bitsPerComponent % 8 != 0) {
+        printf("Unsupported bits per component: %ld\n", bitsPerComponent);
+        PNGImageRelease(png);
+        return nullptr;
+    }
+    
+    auto componentSize = bitsPerComponent / 8;
+    
+    auto pixelComponentType = PixelComponentType::uint8;
+    switch (componentSize) {
+        case 1:
+            pixelComponentType = PixelComponentType::uint8;
+            break;
+            
+        case 2:
+            pixelComponentType = PixelComponentType::float16;
+            break;
+            
+        default:
+            printf("Unsupported component size: %ld\n", componentSize);
+            PNGImageRelease(png);
+            return nullptr;
+    }
+    
+    ImagePixelFormat pixelFormat = { };
+    pixelFormat.numComponents = numComponents;
+    pixelFormat.size = numComponents * componentSize;
+    for (auto i = 0; i < numComponents; i++) {
+        pixelFormat.components[i].channel = static_cast<ImagePixelChannel>(i);
+        pixelFormat.components[i].type = pixelComponentType;
+    }
+    
+    
+    // Copy iCC profile data
+    char* iccProfileData = nullptr;
+    long iccProfileDataLength = png->getICCPDataLength();
+    if (iccProfileDataLength) {
+        iccProfileData = new char[iccProfileDataLength];
+        memcpy(iccProfileData, png->getICCPData(), iccProfileDataLength);
+    }
+    
+    
+    // Copy and convert image data
+    auto width = png->getWidth();
+    auto height = png->getHeight();
+    auto depth = 1;
+    auto contents = new char[width * height * numComponents * componentSize];
+    auto uint8Contents = reinterpret_cast<uint8_t*>(contents);
+    auto uint16Contents = reinterpret_cast<__fp16*>(contents);
+    memset(contents, 0xff, width * height * numComponents * componentSize);
+    
+    auto pngContents = png->getContents();
+    auto pngUint8Contents = reinterpret_cast<const uint8_t*>(pngContents);
+    auto pngUint16Contents = reinterpret_cast<const PixelInfo<uint16_t, float>*>(pngContents);
+    
+    for (auto y = 0; y < height; y++) {
+        for (auto x = 0; x < width; x++) {
+            auto index = (y * width + x) * numComponents;
+            switch (componentSize) {
+                case 1: {
+                    auto color = uint8Contents + index;
+                    auto pngColor = pngUint8Contents + index;
+                    for (auto i = 0; i < numComponents; i++) {
+                        color[i] = pngColor[i];
+                    }
+                    break;
+                }
+                    
+                case 2: {
+                    auto color = uint16Contents + index;
+                    auto pngColor = pngUint16Contents + index;
+                    for (auto i = 0; i < numComponents; i++) {
+                        color[i] = pngColor[i].convert(false);
+                    }
+                    break;
+                }
+                    
+                default:
+                    break;
+            }
+        }
+    }
+    
+    // Clean up
+    PNGImageRelease(png);
+    
+    return new ImageContainer(colorSpace, pixelFormat, false, false, contents, width, height, depth, iccProfileData, iccProfileDataLength);
+}
+
+
 ImageContainer* nullable ImageContainer::load(const char* nullable path) {
+    // Try to load as a png image
+    {
+        auto png = _tryLoadPNG(path);
+        if (png) {
+            printf("Image is loaded using LibPNG\n");
+            return png;
+        }
+    }
+    
+    // Use stb_image to try to load the image
     auto is16Bit = stbi_is_16_bit(path);
     auto isHdr = stbi_is_hdr(path);
     if (isHdr) {
@@ -267,24 +422,8 @@ ImageContainer* nullable ImageContainer::load(const char* nullable path) {
     
     stbi_image_free(components);
     
+    printf("Image is loaded using stb_image\n");
     return new ImageContainer(ImageContainerColorSpace::unknown, pixelFormat, true, isHdr, contents, width, height, 1, nullptr, 0);
-}
-
-
-void ImageContainer::setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength) {
-    // Remove old ICC profile data
-    if (_iccProfileData) {
-        delete [] _iccProfileData;
-        _iccProfileData = nullptr;
-        _iccProfileDataLength = 0;
-    }
-    
-    // Copy new ICC profile data if presented
-    if (iccProfileData && iccProfileDataLength > 0) {
-        _iccProfileData = new char[iccProfileDataLength];
-        std::memcpy(_iccProfileData, iccProfileData, iccProfileDataLength);
-        _iccProfileDataLength = iccProfileDataLength;
-    }
 }
 
 
@@ -303,126 +442,4 @@ ImageContainer* nonnull ImageContainer::copy() {
     
     // Create a new ImageContainer instance
     return new ImageContainer(_colorSpace, _pixelFormat, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
-}
-
-
-bool ImageContainer::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback) {
-    // Don't do anything if pixel formats are identical
-    if (_pixelFormat == targetPixelFormat) {
-        return true;
-    }
-    
-    // Check if target pixel format is valid
-    if (targetPixelFormat.validate() == false) {
-        return false;
-    }
-    
-    
-    // Build a source table to fetch pixel data
-    struct FetchStep {
-        typedef double (* FetchFunction)(const char* nonnull data);
-        
-        long byteOffset;
-        /// Up to 7 bits.
-        long bitOffset;
-        long bitLength;
-        FetchFunction nonnull fetchFunction;
-        
-        /// How much bytes should be copied based on ``bitLength``.
-        long copyLength;
-        
-        void init(long totalBitOffset, long totalBitLength, FetchFunction nonnull fetchFunction) {
-            this->byteOffset = totalBitOffset / 8;
-            this->bitOffset = totalBitOffset - byteOffset * 8;
-            this->bitLength = totalBitLength;
-            this->fetchFunction = fetchFunction;
-            
-            copyLength = (bitLength + 7) / 8;
-        }
-        
-        void float16(long totalBitOffset, long totalBitLength, FetchFunction nonnull fetchFunction) {
-            this->byteOffset = totalBitOffset / 16;
-            this->bitOffset = totalBitOffset - byteOffset * 16;
-            this->bitLength = totalBitLength;
-            this->fetchFunction = fetchFunction;
-            
-            copyLength = (bitLength + 15) / 16;
-        }
-        
-        double fetch(const char* nonnull data) {
-            char componentData[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-            memcpy(componentData, data + byteOffset, copyLength);
-            if (bitOffset) {
-                // TODO: Also respect endianness
-                assert(0 && "Bit offset is not yet supported. Implement this");
-            }
-            
-            return fetchFunction(data);
-        }
-    };
-    FetchStep fetchSteps[4];
-    {
-        long bitOffset = 0;
-        
-        for (auto componentIndex = 0; componentIndex < _pixelFormat.numComponents; componentIndex++) {
-            auto& component = _pixelFormat.components[componentIndex];
-            auto componentBitSize = getPixelComponentTypeSize(component.type) * 8;
-            switch (component.type) {
-                case PixelComponentType::sint8:
-                    fetchSteps[componentIndex].init(bitOffset, componentBitSize, [](auto data) {
-                        return static_cast<double>(data[0]) / 127.0;
-                    });
-                    break;
-                    
-                case PixelComponentType::uint8:
-                    fetchSteps[componentIndex].init(bitOffset, componentBitSize, [](auto data) {
-                        auto buffer = reinterpret_cast<const unsigned char*>(data);
-                        return static_cast<double>(buffer[0]) / 255.0;
-                    });
-                    break;
-                    
-                case PixelComponentType::float16:
-                    fetchSteps[componentIndex].float16(bitOffset, componentBitSize, [](auto data) {
-                        auto buffer = reinterpret_cast<const __fp16*>(data);
-                        return static_cast<double>(buffer[0]);
-                    });
-                    break;
-            }
-            
-            bitOffset += componentBitSize;
-        }
-    }
-    
-    
-    // Build a destination table to set pixel data
-    
-    
-    // Prepare target buffer
-    //auto newContentsSize = _width * _height * _depth * targetPixelFormat.size;
-    //auto newContents = new char[newContentsSize];
-    for (auto k = 0; k < _depth; k++) {
-        for (auto j = 0; j < _height; j++) {
-            for (auto i = 0; i < _width; i++) {
-                // Current pixel addresses
-                auto sourcePixel = _contents + (k*_height + j*_width + i)*_pixelFormat.size;
-                //auto destinationPixel = _contents + (k*_height + j*_width + i)*targetPixelFormat.size;
-                
-                // Fetch all color components
-                double colorComponents[5];
-                for (auto componentIndex = 0; componentIndex < _pixelFormat.numComponents; componentIndex++) {
-                    auto channelIndex = static_cast<long>(_pixelFormat.components[componentIndex].channel);
-                    colorComponents[channelIndex] = fetchSteps[componentIndex].fetch(sourcePixel);
-                }
-                
-                // Copy all component data
-                for (auto componentIndex = 0; componentIndex < targetPixelFormat.numComponents; componentIndex++) {
-                    // TODO: Finished here
-                    //writeSteps[componentIndex].write(destinationPixel, colorComponents);
-                }
-            }
-        }
-    }
-    
-    _pixelFormat = targetPixelFormat;
-    return true;
 }

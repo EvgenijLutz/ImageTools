@@ -31,7 +31,7 @@ public extension ImagePixelComponent {
 
 
 public extension ImageContainer {
-    static func load(path: String) throws -> ImageContainer {
+    static func load(path: String) throws -> sending ImageContainer {
         let image: ImageContainer? = path.withCString { cString in
             ImageContainer.__loadUnsafe(cString)
         }
@@ -41,6 +41,13 @@ public extension ImageContainer {
         }
         
         return image
+    }
+    
+    
+    static func load(path: String) async throws -> sending ImageContainer {
+        try await Task {
+            return try ImageContainer.load(path: path)
+        }.value
     }
 }
 
@@ -108,7 +115,7 @@ public extension ImageContainer {
                     case .p3: p3
                     default:
                         switch componentType {
-                        case .sint8, .uint8: sRGB
+                        case .uint8: sRGB
                         case .float16: p3
                         default: unknown
                         }
@@ -142,26 +149,17 @@ public extension ImageContainer {
             let numComponents = Int(pixelFormat.numComponents)
             let alphaMask: UInt32
             switch numComponents {
-            case 1:
-                alphaMask = CGImageAlphaInfo.none.rawValue
-                
-            case 2:
-                alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
-                
-            case 3:
-                alphaMask = CGImageAlphaInfo.none.rawValue
-                
-            case 4:
-                alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
-                
-            default:
-                throw ImageToolsError.other("Unsupported number of pixel components: \(numComponents)")
+            case 1: alphaMask = CGImageAlphaInfo.none.rawValue
+            case 2: alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
+            case 3: alphaMask = CGImageAlphaInfo.none.rawValue
+            case 4: alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
+            default: throw ImageToolsError.other("Unsupported number of pixel components: \(numComponents)")
             }
             
             let componentMask: UInt32
             let orderMask: UInt32
             switch componentType {
-            case .sint8, .uint8:
+            case .uint8:
                 componentMask = CGImageComponentInfo.integer.rawValue
                 orderMask = CGImageByteOrderInfo.orderDefault.rawValue
                 
