@@ -6,9 +6,10 @@
 //
 
 #include <ImageToolsC/ImageEditor.hpp>
+#include <LCMS2C/LCMS2C.hpp>
 
 
-ImageEditor* nullable ImageEditorRetain(ImageEditor* nullable editor) {
+ImageEditor* it_nullable ImageEditorRetain(ImageEditor* it_nullable editor) {
     if (editor == nullptr) {
         return nullptr;
     }
@@ -18,7 +19,7 @@ ImageEditor* nullable ImageEditorRetain(ImageEditor* nullable editor) {
 }
 
 
-void ImageEditorRelease(ImageEditor* nullable editor) {
+void ImageEditorRelease(ImageEditor* it_nullable editor) {
     if (editor == nullptr) {
         return;
     }
@@ -41,18 +42,34 @@ ImageEditor::~ImageEditor() {
 }
 
 
-ImageEditor* nonnull ImageEditor::create() {
+ImageEditor* it_nonnull ImageEditor::create() {
     return new ImageEditor();
 }
 
 
-void ImageEditor::edit(ImageContainer* nullable image) {
+ImageEditor* it_nullable ImageEditor::load(const char* it_nullable path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+    auto image = ImageContainer::load(path, assumeSRGB);
+    if (image == nullptr) {
+        return nullptr;
+    }
+    
+    // Create an editor
+    auto editor = ImageEditor::create();
+    
+    // Capture the image without needing to copy it
+    editor->_image = image;
+    
+    return editor;
+}
+
+
+void ImageEditor::edit(ImageContainer* it_nullable image) {
     ImageContainerRelease(_image);
     _image = ImageContainerRetain(image);
 }
 
 
-ImageContainer* nullable ImageEditor::getImageCopy() {
+ImageContainer* it_nullable ImageEditor::getImageCopy() {
     if (_image == nullptr) {
         return nullptr;
     }
@@ -61,7 +78,7 @@ ImageContainer* nullable ImageEditor::getImageCopy() {
 }
 
 
-void ImageEditor::setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength) {
+void ImageEditor::setICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength) {
     // No image to edit
     if (_image == nullptr) {
         return;
@@ -86,7 +103,55 @@ void ImageEditor::setICCProfileData(const char* nullable iccProfileData, long ic
 }
 
 
-bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback) {
+static LCMSColorProfile* it_nullable createColorProfile(const char* it_nullable iccProfileData, long iccProfileDataLength) {
+    if (iccProfileData) {
+        return LCMSColorProfile::create(iccProfileData, iccProfileDataLength);
+    }
+    
+    return nullptr;
+}
+
+
+bool ImageEditor::convertICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength) {
+    if (_image == nullptr) {
+        return false;
+    }
+    
+    auto pixelFormat = _image->_pixelFormat;
+    auto sourceColorProfile = createColorProfile(_image->_iccProfileData, _image->_iccProfileDataLength);
+    auto cmsImage = LCMSImage::create(_image->_contents,
+                                      _image->_width, _image->_height,
+                                      pixelFormat.numComponents, pixelFormat.size / pixelFormat.numComponents,
+                                      _image->_hdr,
+                                      sourceColorProfile);
+    if (cmsImage == nullptr) {
+        LCMSColorProfileRelease(sourceColorProfile);
+        return false;
+    }
+    
+    auto colorProfile = createColorProfile(iccProfileData, iccProfileDataLength);
+    auto converted = cmsImage->convertColorProfile(colorProfile);
+    if (converted == false) {
+        LCMSColorProfileRelease(colorProfile);
+        LCMSColorProfileRelease(sourceColorProfile);
+        LCMSImageRelease(cmsImage);
+        return false;
+    }
+    
+    // Apply changes
+    std::memcpy(_image->_contents, cmsImage->getData(), cmsImage->getDataSize());
+    setICCProfileData(iccProfileData, iccProfileDataLength);
+    
+    // Clean up
+    LCMSColorProfileRelease(colorProfile);
+    LCMSColorProfileRelease(sourceColorProfile);
+    LCMSImageRelease(cmsImage);
+    
+    return true;
+}
+
+
+bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* it_nullable userInfo, ImageToolsProgressCallback it_nullable progressCallback) {
     // No image to edit
     if (_image == nullptr) {
         return false;
@@ -108,18 +173,18 @@ bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* n
     
     // Build a source table to fetch pixel data
     struct FetchStep {
-        typedef double (* FetchFunction)(const char* nonnull data);
+        typedef double (* FetchFunction)(const char* it_nonnull data);
         
         long byteOffset;
         /// Up to 7 bits.
         long bitOffset;
         long bitLength;
-        FetchFunction nonnull fetchFunction;
+        FetchFunction it_nonnull fetchFunction;
         
         /// How much bytes should be copied based on ``bitLength``.
         long copyLength;
         
-        void init(long totalBitOffset, long totalBitLength, FetchFunction nonnull fetchFunction) {
+        void init(long totalBitOffset, long totalBitLength, FetchFunction it_nonnull fetchFunction) {
             this->byteOffset = totalBitOffset / 8;
             this->bitOffset = totalBitOffset - byteOffset * 8;
             this->bitLength = totalBitLength;
@@ -128,7 +193,7 @@ bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* n
             copyLength = (bitLength + 7) / 8;
         }
         
-        void float16(long totalBitOffset, long totalBitLength, FetchFunction nonnull fetchFunction) {
+        void float16(long totalBitOffset, long totalBitLength, FetchFunction it_nonnull fetchFunction) {
             this->byteOffset = totalBitOffset / 16;
             this->bitOffset = totalBitOffset - byteOffset * 16;
             this->bitLength = totalBitLength;
@@ -137,7 +202,16 @@ bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* n
             copyLength = (bitLength + 15) / 16;
         }
         
-        double fetch(const char* nonnull data) {
+        void float32(long totalBitOffset, long totalBitLength, FetchFunction it_nonnull fetchFunction) {
+            this->byteOffset = totalBitOffset / 32;
+            this->bitOffset = totalBitOffset - byteOffset * 32;
+            this->bitLength = totalBitLength;
+            this->fetchFunction = fetchFunction;
+            
+            copyLength = (bitLength + 31) / 32;
+        }
+        
+        double fetch(const char* it_nonnull data) {
             char componentData[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
             memcpy(componentData, data + byteOffset, copyLength);
             if (bitOffset) {
@@ -166,6 +240,13 @@ bool ImageEditor::convertPixelFormat(ImagePixelFormat targetPixelFormat, void* n
                 case PixelComponentType::float16:
                     fetchSteps[componentIndex].float16(bitOffset, componentBitSize, [](auto data) {
                         auto buffer = reinterpret_cast<const __fp16*>(data);
+                        return static_cast<double>(buffer[0]);
+                    });
+                    break;
+                    
+                case PixelComponentType::float32:
+                    fetchSteps[componentIndex].float32(bitOffset, componentBitSize, [](auto data) {
+                        auto buffer = reinterpret_cast<const float*>(data);
                         return static_cast<double>(buffer[0]);
                     });
                     break;

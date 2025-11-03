@@ -1,1 +1,2 @@
-Sources/ImageToolsC/stb_image.h -linguist-vendored
+Sources/ImageToolsC/tinyexr/** -linguist-vendored
+Sources/ImageToolsC/stb/** -linguist-vendored

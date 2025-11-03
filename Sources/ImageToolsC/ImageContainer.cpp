@@ -7,6 +7,7 @@
 
 #include <ImageToolsC/ImageContainer.hpp>
 #include <LibPNGC/LibPNGC.hpp>
+#include <LCMS2C/LCMS2C.hpp>
 
 
 #if __has_include(<TargetConditionals.h>)
@@ -19,8 +20,15 @@
 // No NEON :(
 #endif
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "stb/stb_image.h"
+#include "tinyexr/tinyexr.h"
+
+
+static char* it_nonnull copyData(const void* it_nonnull source, long size) {
+    auto copy = new char[size];
+    std::memcpy(copy, source, size);
+    return copy;
+}
 
 
 template <typename SourceType, typename DestinationType>
@@ -64,7 +72,8 @@ struct PixelInfo {
 long getPixelComponentTypeSize(PixelComponentType type) {
     long sizes[] = {
         1,
-        2
+        2,
+        4
     };
     
     return sizes[static_cast<long>(type)];
@@ -193,7 +202,7 @@ bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
 }
 
 
-ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) {
+ImageContainer* it_nullable ImageContainerRetain(ImageContainer* it_nullable image) {
     if (image) {
         image->_referenceCounter.fetch_add(1);
     }
@@ -202,17 +211,17 @@ ImageContainer* nullable ImageContainerRetain(ImageContainer* nullable image) {
 }
 
 
-void ImageContainerRelease(ImageContainer* nullable image) {
+void ImageContainerRelease(ImageContainer* it_nullable image) {
     if (image && image->_referenceCounter.fetch_sub(1) == 1) {
         delete image;
     }
 }
 
 
-ImageContainer::ImageContainer(ImageContainerColorSpace colorSpace, ImagePixelFormat pixelFormat, bool linear, bool hdr, char* nonnull contents, long width, long height, long depth, char* nullable iccProfileData, long iccProfileDataLength):
+ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* it_nonnull contents, long width, long height, long depth, char* it_nullable iccProfileData, long iccProfileDataLength):
 _referenceCounter(1),
-_colorSpace(colorSpace),
 _pixelFormat(pixelFormat),
+_sRGB(sRGB),
 _linear(linear),
 _hdr(hdr),
 _contents(contents),
@@ -234,21 +243,21 @@ ImageContainer::~ImageContainer() {
         delete [] _iccProfileData;
     }
     
-    printf("Byeee\n");
+    //printf("Byeee\n");
 }
 
 
-ImageContainer* nonnull ImageContainer::rgba8Unorm(long width, long height) {
+ImageContainer* it_nonnull ImageContainer::rgba8Unorm(long width, long height) {
     auto pixelFormat = ImagePixelFormat::rgba8Unorm;
     auto contentsSize = width * height * 4;
     auto contents = new char[contentsSize];
     std::memset(contents, 0xFF, contentsSize);
     
-    return new ImageContainer(ImageContainerColorSpace::unknown, pixelFormat, true, false, contents, width, height, 1, nullptr, 0);
+    return new ImageContainer(pixelFormat, true, true, false, contents, width, height, 1, nullptr, 0);
 }
 
 
-ImageContainer* nullable ImageContainer::_tryLoadPNG(const char* nonnull path) {
+ImageContainer* it_nullable ImageContainer::_tryLoadPNG(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
     auto isPng = PNGImage::checkIfPNG(path);
     if (isPng == false) {
         return nullptr;
@@ -260,7 +269,7 @@ ImageContainer* nullable ImageContainer::_tryLoadPNG(const char* nonnull path) {
     }
     
     
-    auto colorSpace = png->getIsSRGB() ? ImageContainerColorSpace::sRGB : ImageContainerColorSpace::unknown;
+    auto sRGB = png->getIsSRGB();
     
     auto numComponents = png->getNumComponents();
     auto bitsPerComponent = png->getBitsPerComponent();
@@ -350,17 +359,110 @@ ImageContainer* nullable ImageContainer::_tryLoadPNG(const char* nonnull path) {
     // Clean up
     PNGImageRelease(png);
     
-    return new ImageContainer(colorSpace, pixelFormat, false, false, contents, width, height, depth, iccProfileData, iccProfileDataLength);
+    return new ImageContainer(pixelFormat, sRGB, false, false, contents, width, height, depth, iccProfileData, iccProfileDataLength);
 }
 
 
-ImageContainer* nullable ImageContainer::load(const char* nullable path) {
-    // Try to load as a png image
+ImageContainer* it_nullable ImageContainer::_tryLoadOpenEXR(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+    // Check if it's an EXR file
+    if (IsEXR(path) != TINYEXR_SUCCESS) {
+        return nullptr;
+    }
+    
+    // Get EXR version
+    EXRVersion version;
+    auto result = ParseEXRVersionFromFile(&version, path);
+    if (result != TINYEXR_SUCCESS) {
+        printf("Could not parse EXR version\n");
+        return nullptr;
+    }
+    
+    // Get EXR header
+    EXRHeader header;
+    const char* err = nullptr;
+    result = ParseEXRHeaderFromFile(&header, &version, path, &err);
+    if (result != TINYEXR_SUCCESS) {
+        if (err) {
+            fprintf(stderr, "ERR : %s\n", err);
+            FreeEXRErrorMessage(err);
+        }
+        return nullptr;
+    }
+    
+    // Read the file
+    // width * height * RGBA
+    float* exrContents = nullptr;
+    int width = 0;
+    int height = 0;
+    int depth = 1;
+    result = LoadEXR(&exrContents, &width, &height, path, &err);
+    if (result != TINYEXR_SUCCESS) {
+        if (err) {
+            fprintf(stderr, "ERR : %s\n", err);
+            FreeEXRErrorMessage(err);
+            FreeEXRHeader(&header);
+        }
+        return nullptr;
+    }
+    
+    // Cast image data to float16
+    auto imageContents = new __fp16[width * height * header.num_channels];
+    auto contents = reinterpret_cast<char*>(imageContents);
+    for (auto y = 0; y < height; y++) {
+        for (auto x = 0; x < width; x++) {
+            for (auto i = 0; i < header.num_channels; i++) {
+                auto source = (y * width + x) * 4 + i;
+                auto destination = (y * width + x) * header.num_channels + i;
+                imageContents[destination] = exrContents[source];
+            }
+        }
+    }
+    
+    // Create image container
+    auto pixelFormat = ImagePixelFormat();
+    pixelFormat.numComponents = header.num_channels;
+    for (auto i = 0; i < header.num_channels; i++) {
+        pixelFormat.components[i].channel = static_cast<ImagePixelChannel>(i);
+        pixelFormat.components[i].type = PixelComponentType::float16;
+    }
+    pixelFormat.size = header.num_channels * 2;
+    // Assume Rec. 709 color profile
+    auto rec709 = LCMSColorProfile::createRec709();
+    auto profileSize = rec709->getSize();
+    auto profileData = copyData(rec709->getData(), profileSize);
+    
+    //auto linear = rec709->createLinear();
+    //auto profileSize = linear->getSize();
+    //auto profileData = copyData(linear->getData(), profileSize);
+    //LCMSColorProfileRelease(linear);
+    
+    LCMSColorProfileRelease(rec709);
+    auto container = new ImageContainer(pixelFormat, false, false, true, contents, width, height, depth, profileData, profileSize);
+    
+    // Clean up
+    free(exrContents);
+    FreeEXRHeader(&header);
+    
+    return container;
+}
+
+
+ImageContainer* it_nullable ImageContainer::load(const char* it_nullable path, bool assumeSRGB) {
+    // Try to load as a PNG image
     {
-        auto png = _tryLoadPNG(path);
+        auto png = _tryLoadPNG(path, assumeSRGB);
         if (png) {
             printf("Image is loaded using LibPNG\n");
             return png;
+        }
+    }
+    
+    // Try to load as an OpenEXR image
+    {
+        auto exr = _tryLoadOpenEXR(path, assumeSRGB);
+        if (exr) {
+            printf("Image is loaded using tinyexr\n");
+            return exr;
         }
     }
     
@@ -408,7 +510,6 @@ ImageContainer* nullable ImageContainer::load(const char* nullable path) {
             for (auto i = 0; i < numComponents; i++) {
                 auto value = rgba[i];
                 //value = pow(value, 1 / 2.2);
-                
                 if (is16Bit) {
                     halfComponents[index + i] = static_cast<__fp16>(value);
                 }
@@ -423,11 +524,11 @@ ImageContainer* nullable ImageContainer::load(const char* nullable path) {
     stbi_image_free(components);
     
     printf("Image is loaded using stb_image\n");
-    return new ImageContainer(ImageContainerColorSpace::unknown, pixelFormat, true, isHdr, contents, width, height, 1, nullptr, 0);
+    return new ImageContainer(pixelFormat, assumeSRGB, true, isHdr, contents, width, height, 1, nullptr, 0);
 }
 
 
-ImageContainer* nonnull ImageContainer::copy() {
+ImageContainer* it_nonnull ImageContainer::copy() {
     // Copy contents
     auto contentsCopySize = _width * _height * _depth * _pixelFormat.size;
     auto contentsCopy = new char[contentsCopySize];
@@ -441,5 +542,5 @@ ImageContainer* nonnull ImageContainer::copy() {
     }
     
     // Create a new ImageContainer instance
-    return new ImageContainer(_colorSpace, _pixelFormat, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
+    return new ImageContainer(_pixelFormat, _sRGB, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
 }

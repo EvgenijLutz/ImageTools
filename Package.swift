@@ -4,11 +4,19 @@
 import PackageDescription
 
 
-let libPngPackageDependency: Package.Dependency = {
-#if true
-    .package(url: "https://github.com/EvgenijLutz/LibPNG.git", branch: "main")
+let dependencies: [Package.Dependency] = {
+#if false
+    [
+        .package(url: "https://github.com/EvgenijLutz/LibPNG.git", branch: "main"),
+        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", branch: "main"),
+        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", branch: "main"),
+    ]
 #else
-    .package(name: "LibPNG", path: "../LibPNG")
+    [
+        .package(name: "LibPNG", path: "../LibPNG"),
+        .package(name: "LittleCMS", path: "../LittleCMS"),
+        .package(name: "ASTCEncoder", path: "../ASTCEncoder"),
+    ]
 #endif
 }()
 
@@ -34,14 +42,14 @@ let package = Package(
             targets: ["ImageTools"]
         ),
     ],
-    dependencies: [
-        libPngPackageDependency,
-    ],
+    dependencies: dependencies,
     targets: [
         .target(
             name: "ImageToolsC",
             dependencies: [
-                .product(name: "LibPNGC", package: "LibPNG")
+                .product(name: "LibPNGC", package: "LibPNG"),
+                .product(name: "LCMS2C", package: "LittleCMS"),
+                .product(name: "ASTCEncoderC", package: "ASTCEncoder")
             ],
             cxxSettings: [
                 //.enableWarning("return-type"),
@@ -51,6 +59,9 @@ let package = Package(
         .target(
             name: "ImageTools",
             dependencies: [
+                .product(name: "LibPNG", package: "LibPNG"),
+                .product(name: "LittleCMS", package: "LittleCMS"),
+                .product(name: "ASTCEncoder", package: "ASTCEncoder"),
                 .target(name: "ImageToolsC")
             ],
             swiftSettings: [

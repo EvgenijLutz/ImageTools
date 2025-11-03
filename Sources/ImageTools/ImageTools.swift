@@ -31,9 +31,13 @@ public extension ImagePixelComponent {
 
 
 public extension ImageContainer {
-    static func load(path: String) throws -> sending ImageContainer {
+    /// Loads an image from a path.
+    ///
+    /// - Parameter path: Path to load image from.
+    /// - Parameter assumeSRGB: Assume the color profile to be sRGB if it could not be determined during the image loading process.
+    static func load(path: String, assumeSRGB: Bool = true) throws -> sending ImageContainer {
         let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.__loadUnsafe(cString)
+            ImageContainer.__loadUnsafe(cString, assumeSRGB)
         }
         
         guard let image else {
@@ -76,6 +80,12 @@ public extension ImageContainer {
                 if let iccProfileData, iccProfileDataLength > 0 {
                     let iccProfileData = Data(bytes: iccProfileData, count: iccProfileDataLength)
                     if let colorProfile = CGColorSpace(iccData: iccProfileData as CFData) {
+                        if hdr {
+                            if let extendedColorProfile = CGColorSpaceCreateExtended(colorProfile) {
+                                return extendedColorProfile
+                            }
+                        }
+                        
                         return colorProfile
                     }
                 }
@@ -95,13 +105,6 @@ public extension ImageContainer {
                         gamma: CGColorSpace.sRGB
                     )
                     
-                    let p3 = ColorSpaceNames(
-                        linearHdr: CGColorSpace.extendedLinearDisplayP3,
-                        linear: CGColorSpace.linearDisplayP3,
-                        gammaHdr: CGColorSpace.extendedDisplayP3,
-                        gamma: CGColorSpace.displayP3
-                    )
-                    
                     let unknown = ColorSpaceNames(
                         linearHdr: CGColorSpace.genericRGBLinear,
                         linear: CGColorSpace.genericRGBLinear,
@@ -109,17 +112,7 @@ public extension ImageContainer {
                         gamma: CGColorSpace.genericRGBLinear
                     )
                     
-                    let names: ColorSpaceNames = switch colorSpace {
-                        //case .unknown: unknown
-                    case .sRGB: sRGB
-                    case .p3: p3
-                    default:
-                        switch componentType {
-                        case .uint8: sRGB
-                        case .float16: p3
-                        default: unknown
-                        }
-                    }
+                    let names = issrgb ? sRGB : unknown
                     
                     if linear {
                         if hdr {

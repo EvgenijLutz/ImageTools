@@ -18,31 +18,34 @@ class ImageEditor final {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    ImageContainer* nullable _image;
+    ImageContainer* it_nullable _image;
     
     ImageEditor();
     ~ImageEditor();
     
-    friend ImageEditor* nullable ImageEditorRetain(ImageEditor* nullable editor) SWIFT_RETURNS_UNRETAINED;
-    friend void ImageEditorRelease(ImageEditor* nullable editor);
+    friend ImageEditor* it_nullable ImageEditorRetain(ImageEditor* it_nullable editor) SWIFT_RETURNS_UNRETAINED;
+    friend void ImageEditorRelease(ImageEditor* it_nullable editor);
     
 public:
-    static ImageEditor* nonnull create() SWIFT_NAME(init());
+    static ImageEditor* it_nonnull create() SWIFT_NAME(init()) SWIFT_RETURNS_RETAINED;
     
-    void edit(ImageContainer* nullable image);
+    static ImageEditor* it_nullable load(const char* it_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
+    
+    void edit(ImageContainer* it_nullable image);
     
     [[nodiscard("Don't forget to release the image using the ImageContainerRelease function.")]]
-    ImageContainer* nullable getImageCopy() SWIFT_COMPUTED_PROPERTY;
+    ImageContainer* it_nullable getImageCopy() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_RETAINED;
     
-    void setICCProfileData(const char* nullable iccProfileData, long iccProfileDataLength);
+    void setICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength);
+    bool convertICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength);
     
     //void promoteToHomegeneousPixelFormat();
     
     /// Converts pixel format if possible.
-    bool convertPixelFormat(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
+    bool convertPixelFormat(ImagePixelFormat targetPixelFormat, void* it_nullable userInfo, ImageToolsProgressCallback it_nullable progressCallback);
     
 //    /// Swizzles pixel components.
 //    ///
 //    /// - Returns: `false` if `targetPixelFormat`'s components do not match pixel format components of this image. `true` if succeeds.
-//    bool swizzle(ImagePixelFormat targetPixelFormat, void* nullable userInfo, ImageToolsProgressCallback nullable progressCallback);
+//    bool swizzle(ImagePixelFormat targetPixelFormat, void* it_nullable userInfo, ImageToolsProgressCallback it_nullable progressCallback);
 } SWIFT_SHARED_REFERENCE(ImageEditorRetain, ImageEditorRelease);

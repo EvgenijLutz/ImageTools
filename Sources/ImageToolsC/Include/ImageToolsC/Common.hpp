@@ -12,10 +12,10 @@
 #include <assert.h>
 
 
-#if !defined nonnull
-#define nonnull __nonnull
+#if !defined it_nonnull
+#define it_nonnull __nonnull
 #endif
 
-#if !defined nullable
-#define nullable __nullable
+#if !defined it_nullable
+#define it_nullable __nullable
 #endif
