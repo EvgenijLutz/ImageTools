@@ -8,6 +8,7 @@
 #pragma once
 
 #include <ImageToolsC/Common.hpp>
+#include <LCMS2C/LCMS2C.hpp>
 
 
 class ImageContainer;
@@ -73,33 +74,32 @@ struct ImagePixelComponent {
 ///
 /// Contains information of every channel.
 struct ImagePixelFormat {
+    /// Component type.
+    PixelComponentType componentType;
+    
     /// Number of components
     long numComponents;
     
-    /// Components
-    ImagePixelComponent components[4];
+    /// Determines if the last component serves as an alpha channel.
+    ///
+    /// Usable for color space conversion to determine if the last component should be treated as a regular pixel component value or skipped and leaved as is.
+    bool hasAlpha;
     
-    /// How many bytes does one pixel take.
-    long size;
+    ImagePixelFormat(PixelComponentType componentType, long numComponents, bool hasAlpha);
+    ImagePixelFormat(PixelComponentType componentType, long numComponents);
+    ~ImagePixelFormat();
     
     static const ImagePixelFormat rgba8Unorm;
     
-    bool validate() const;
+    /// How many bytes does one pixel take.
+    long getSize() const SWIFT_COMPUTED_PROPERTY;
     
-    /// Checks if the pixel format consists of components of the same type.
-    bool isHomogeneous() const;
+    /// Component size.
+    long getComponentSize() const SWIFT_COMPUTED_PROPERTY;
     
     
     bool operator == (const ImagePixelFormat& other) const;
 };
-
-
-/// Progress callback.
-///
-/// Nofities about current operation's progress.
-///
-/// - Returns: `true` if the operation should be calcelled, otherwise `false`.
-typedef bool (* ImageToolsProgressCallback)(void* it_nullable userInfo, float progress);
 
 
 /// Image container.
@@ -114,56 +114,49 @@ private:
     bool _linear;
     bool _hdr;
     
-    char* it_nonnull _contents;
+    char* fn_nonnull _contents;
     long _width;
     long _height;
     long _depth;
     
-    /// ICC color profile data.
+    /// Color profile data.
     ///
-    /// If `null`, then it's assumed that image has the `sRGB` color space.
-    char* it_nullable _iccProfileData;
-    
-    /// Size of the ICC color profile data ``ImageContainer/_iccData-property``.
-    ///
-    /// Ignored if ``ImageContainer/_iccData-property`` is `null`.
-    long _iccProfileDataLength;
+    /// If `null`, then it's assumed that image has the `sRGB` colour profile.
+    LCMSColorProfile* fn_nullable _colorProfile;
     
     
-    static ImageContainer* it_nullable _tryLoadPNG(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* it_nullable _tryLoadOpenEXR(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable _tryLoadOpenEXR(const char* fn_nonnull path) SWIFT_RETURNS_RETAINED;
     
     
-    ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* it_nonnull contents, long width, long height, long depth, char* it_nullable iccProfileData, long iccProfileDataLength);
+    ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile);
     ~ImageContainer();
     
     
     friend class ImageEditor;
-    friend ImageContainer* it_nullable ImageContainerRetain(ImageContainer* it_nullable image) SWIFT_RETURNS_UNRETAINED;
-    friend void ImageContainerRelease(ImageContainer* it_nullable image);
+    friend ImageContainer* fn_nullable ImageContainerRetain(ImageContainer* fn_nullable image) SWIFT_RETURNS_UNRETAINED;
+    friend void ImageContainerRelease(ImageContainer* fn_nullable image);
     
 public:
-    static ImageContainer* it_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* it_nullable load(const char* it_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
     bool getIsSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
     
-    char* it_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
-    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.size; }
+    char* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
+    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.getSize(); }
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
     long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
     
-    // TODO: Implement std::span for swift 6.2
-    const char* it_nullable getICCProfileData() SWIFT_COMPUTED_PROPERTY { return _iccProfileData; }
-    long getICCProfileDataLength() SWIFT_COMPUTED_PROPERTY { return _iccProfileDataLength; }
+    LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
-    ImageContainer* it_nonnull copy() SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
 }
 SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease)
 SWIFT_UNCHECKED_SENDABLE;

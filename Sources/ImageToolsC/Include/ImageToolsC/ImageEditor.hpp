@@ -9,6 +9,7 @@
 
 #include <ImageToolsC/Common.hpp>
 #include <ImageToolsC/ImageContainer.hpp>
+#include <LCMS2C/LCMS2C.hpp>
 
 
 /// Image editor.
@@ -18,34 +19,24 @@ class ImageEditor final {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    ImageContainer* it_nullable _image;
+    ImageContainer* fn_nullable _image;
     
     ImageEditor();
     ~ImageEditor();
     
-    friend ImageEditor* it_nullable ImageEditorRetain(ImageEditor* it_nullable editor) SWIFT_RETURNS_UNRETAINED;
-    friend void ImageEditorRelease(ImageEditor* it_nullable editor);
+    friend ImageEditor* fn_nullable ImageEditorRetain(ImageEditor* fn_nullable editor) SWIFT_RETURNS_UNRETAINED;
+    friend void ImageEditorRelease(ImageEditor* fn_nullable editor);
     
 public:
-    static ImageEditor* it_nonnull create() SWIFT_NAME(init()) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nonnull create() SWIFT_NAME(init()) SWIFT_RETURNS_RETAINED;
     
-    static ImageEditor* it_nullable load(const char* it_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
     
-    void edit(ImageContainer* it_nullable image);
+    void edit(ImageContainer* fn_nullable image);
     
     [[nodiscard("Don't forget to release the image using the ImageContainerRelease function.")]]
-    ImageContainer* it_nullable getImageCopy() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nullable getImageCopy() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_RETAINED;
     
-    void setICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength);
-    bool convertICCProfileData(const char* it_nullable iccProfileData, long iccProfileDataLength);
-    
-    //void promoteToHomegeneousPixelFormat();
-    
-    /// Converts pixel format if possible.
-    bool convertPixelFormat(ImagePixelFormat targetPixelFormat, void* it_nullable userInfo, ImageToolsProgressCallback it_nullable progressCallback);
-    
-//    /// Swizzles pixel components.
-//    ///
-//    /// - Returns: `false` if `targetPixelFormat`'s components do not match pixel format components of this image. `true` if succeeds.
-//    bool swizzle(ImagePixelFormat targetPixelFormat, void* it_nullable userInfo, ImageToolsProgressCallback it_nullable progressCallback);
+    void setColorProfile(LCMSColorProfile* fn_nullable colorProfile);
+    bool convertColorProfile(LCMSColorProfile* fn_nullable colorProfile);
 } SWIFT_SHARED_REFERENCE(ImageEditorRetain, ImageEditorRelease);

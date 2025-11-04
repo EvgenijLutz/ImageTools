@@ -64,21 +64,17 @@ import CoreGraphics
 public extension ImageContainer {
     var cgImage: CGImage  {
         get throws {
-            if pixelFormat.isHomogeneous() == false {
-                throw ImageToolsError.other("Unsupported pixel format")
-            }
-            
             let contents = Data(bytes: contents, count: contentsSize)
             guard let dataProvider = CGDataProvider(data: contents as CFData) else {
                 throw ImageToolsError.other("Something is wrong with image data")
             }
             
-            let componentType = pixelFormat.components.0.type
+            let componentType = pixelFormat.componentType
             
-            let colorProfile: CGColorSpace = try {
+            let cgColorProfile: CGColorSpace = try {
                 // Check if there is iCC profile
-                if let iccProfileData, iccProfileDataLength > 0 {
-                    let iccProfileData = Data(bytes: iccProfileData, count: iccProfileDataLength)
+                if let colorProfile, colorProfile.size > 0 {
+                    let iccProfileData = Data(bytes: colorProfile.data, count: Int(colorProfile.size))
                     if let colorProfile = CGColorSpace(iccData: iccProfileData as CFData) {
                         if hdr {
                             if let extendedColorProfile = CGColorSpaceCreateExtended(colorProfile) {
@@ -173,7 +169,7 @@ public extension ImageContainer {
                 bitsPerComponent: componentSize * 8,
                 bitsPerPixel: componentSize * 8 * numComponents,
                 bytesPerRow: width * componentSize * numComponents,
-                space: colorProfile,
+                space: cgColorProfile,
                 bitmapInfo: .init(rawValue: componentMask | orderMask | alphaMask),
                 provider: dataProvider,
                 decode: nil,

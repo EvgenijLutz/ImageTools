@@ -12,10 +12,18 @@
 #include <assert.h>
 
 
-#if !defined it_nonnull
-#define it_nonnull __nonnull
+#if !defined fn_nonnull
+#define fn_nonnull __nonnull
 #endif
 
-#if !defined it_nullable
-#define it_nullable __nullable
+#if !defined fn_nullable
+#define fn_nullable __nullable
 #endif
+
+
+/// Progress callback.
+///
+/// Nofities about current operation's progress.
+///
+/// - Returns: `true` if the operation should be calcelled, otherwise `false`.
+typedef bool (* ImageToolsProgressCallback)(void* fn_nullable userInfo, float progress);

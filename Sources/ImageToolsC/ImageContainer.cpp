@@ -24,11 +24,12 @@
 #include "tinyexr/tinyexr.h"
 
 
-static char* it_nonnull copyData(const void* it_nonnull source, long size) {
-    auto copy = new char[size];
-    std::memcpy(copy, source, size);
-    return copy;
-}
+// Unused function
+//static char* fn_nonnull copyData(const void* fn_nonnull source, long size) {
+//    auto copy = new char[size];
+//    std::memcpy(copy, source, size);
+//    return copy;
+//}
 
 
 template <typename SourceType, typename DestinationType>
@@ -85,124 +86,41 @@ bool ImagePixelComponent::operator == (const ImagePixelComponent& other) const {
 }
 
 
-const ImagePixelFormat ImagePixelFormat::rgba8Unorm = {
-    .numComponents = 4,
-    .components = {
-        {
-            .channel = ImagePixelChannel::r,
-            .type = PixelComponentType::uint8
-        },
-        {
-            .channel = ImagePixelChannel::g,
-            .type = PixelComponentType::uint8
-        },
-        {
-            .channel = ImagePixelChannel::b,
-            .type = PixelComponentType::uint8
-        },
-        {
-            .channel = ImagePixelChannel::a,
-            .type = PixelComponentType::uint8
-        }
-    },
-        .size = 32
-};
+ImagePixelFormat::ImagePixelFormat(PixelComponentType componentType, long numComponents, bool hasAlpha):
+componentType(componentType),
+numComponents(numComponents),
+hasAlpha(hasAlpha) { }
 
 
-bool ImagePixelFormat::validate() const {
-    // Invalid number of components
-    if (numComponents < 1 || numComponents > 4) {
-        return false;
-    }
-    
-    struct Validator {
-        bool valid = false;
-        long bits = 0;
-        bool usedChannels[4] = { false, false, false, false };
-        
-        /// Accumulates size and checks if the channel was already taken.
-        bool accumulateSizeAndValidateChannel(ImagePixelComponent channel) {
-            // Check if channel is already used
-            auto channelIndex = static_cast<long>(channel.channel);
-            if (usedChannels[channelIndex]) {
-                valid = false;
-                return true;
-            }
-            
-            // Update used channel and pixel size
-            usedChannels[channelIndex] = true;
-            bits += getPixelComponentTypeSize(channel.type) * 8;
-            
-            // So far so good
-            valid = true;
-            return false;
-        }
-        
-        bool validateSize() {
-            return (valid) && (bits % 8 == 0);
-        }
-    };
-    
-    // Check occupied components
-    auto validator = Validator();
-    for (auto componentIndex = 0; componentIndex < numComponents; componentIndex++) {
-        if (validator.accumulateSizeAndValidateChannel(components[componentIndex]) == false) {
-            return false;
-        }
-    }
-    
-    // Check size
-    if (validator.validateSize() == false) {
-        return false;
-    }
-    
-    
-    return validator.bits / 8 == size;
+ImagePixelFormat::ImagePixelFormat(PixelComponentType componentType, long numComponents):
+// Assume that GA or RGBA images treat last components as alpha channels
+ImagePixelFormat(componentType, numComponents, numComponents == 2 || numComponents == 4) { }
+
+
+ImagePixelFormat::~ImagePixelFormat() { }
+
+
+const ImagePixelFormat ImagePixelFormat::rgba8Unorm = ImagePixelFormat(PixelComponentType::uint8, 4, true);
+
+
+long ImagePixelFormat::getSize() const {
+    return getPixelComponentTypeSize(componentType) * numComponents;
 }
 
 
-bool ImagePixelFormat::isHomogeneous() const {
-    // Invalid number of components
-    if (numComponents < 1 || numComponents > 4) {
-        return true;
-    }
-    
-    // Check if all components are equal
-    auto firstComponent = components[0];
-    for (auto componentIndex = 1; componentIndex < numComponents; componentIndex++) {
-        auto& component = components[componentIndex];
-        
-        // Return false if some of components are not equal
-        if (firstComponent.type != component.type) {
-            return false;
-        }
-    }
-    
-    // All components are equal
-    return true;
+long ImagePixelFormat::getComponentSize() const {
+    return getPixelComponentTypeSize(componentType);
 }
 
 
 bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
-    // Check number of components
-    if (numComponents != other.numComponents) {
-        return false;
-    }
-    
-    // TODO: Unwrap loop for faster comparison
-    // Compare components
-    for (auto i = 0; i < numComponents; i++) {
-        if (components[i] != other.components[i]) {
-            return false;
-        }
-    }
-    
-    // Pixel formats are identical
-    return true;
+    return numComponents == other.numComponents &&
+    componentType == other.componentType &&
+    hasAlpha == other.hasAlpha;
 }
 
 
-ImageContainer* it_nullable ImageContainerRetain(ImageContainer* it_nullable image) {
+ImageContainer* fn_nullable ImageContainerRetain(ImageContainer* fn_nullable image) {
     if (image) {
         image->_referenceCounter.fetch_add(1);
     }
@@ -211,14 +129,14 @@ ImageContainer* it_nullable ImageContainerRetain(ImageContainer* it_nullable ima
 }
 
 
-void ImageContainerRelease(ImageContainer* it_nullable image) {
+void ImageContainerRelease(ImageContainer* fn_nullable image) {
     if (image && image->_referenceCounter.fetch_sub(1) == 1) {
         delete image;
     }
 }
 
 
-ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* it_nonnull contents, long width, long height, long depth, char* it_nullable iccProfileData, long iccProfileDataLength):
+ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile):
 _referenceCounter(1),
 _pixelFormat(pixelFormat),
 _sRGB(sRGB),
@@ -228,8 +146,7 @@ _contents(contents),
 _width(width),
 _height(height),
 _depth(depth),
-_iccProfileData(iccProfileData),
-_iccProfileDataLength(iccProfileDataLength) {
+_colorProfile(colorProfile) {
     //
 }
 
@@ -239,25 +156,39 @@ ImageContainer::~ImageContainer() {
         delete [] _contents;
     }
     
-    if (_iccProfileData) {
-        delete [] _iccProfileData;
-    }
+    LCMSColorProfileRelease(_colorProfile);
     
     //printf("Byeee\n");
 }
 
 
-ImageContainer* it_nonnull ImageContainer::rgba8Unorm(long width, long height) {
+ImageContainer* fn_nonnull ImageContainer::rgba8Unorm(long width, long height) {
     auto pixelFormat = ImagePixelFormat::rgba8Unorm;
     auto contentsSize = width * height * 4;
     auto contents = new char[contentsSize];
     std::memset(contents, 0xFF, contentsSize);
     
-    return new ImageContainer(pixelFormat, true, true, false, contents, width, height, 1, nullptr, 0);
+    return new ImageContainer(pixelFormat, true, true, false, contents, width, height, 1, nullptr);
 }
 
 
-ImageContainer* it_nullable ImageContainer::_tryLoadPNG(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+static const char* fn_nonnull _getName(const char* fn_nonnull path) {
+    auto lastOccurance = -1;
+    auto index = 0;
+    auto size = strnlen(path, 10000);
+    while (index + 1 < size) {
+        if (path[index] == '/') {
+            lastOccurance = index;
+        }
+        
+        index += 1;
+    }
+    
+    return path + lastOccurance + 1;
+}
+
+
+ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
     auto isPng = PNGImage::checkIfPNG(path);
     if (isPng == false) {
         return nullptr;
@@ -297,21 +228,13 @@ ImageContainer* it_nullable ImageContainer::_tryLoadPNG(const char* it_nonnull p
             return nullptr;
     }
     
-    ImagePixelFormat pixelFormat = { };
-    pixelFormat.numComponents = numComponents;
-    pixelFormat.size = numComponents * componentSize;
-    for (auto i = 0; i < numComponents; i++) {
-        pixelFormat.components[i].channel = static_cast<ImagePixelChannel>(i);
-        pixelFormat.components[i].type = pixelComponentType;
-    }
-    
+    auto pixelFormat = ImagePixelFormat(pixelComponentType, numComponents);
     
     // Copy iCC profile data
-    char* iccProfileData = nullptr;
+    LCMSColorProfile* fn_nullable colorProfile = nullptr;
     long iccProfileDataLength = png->getICCPDataLength();
     if (iccProfileDataLength) {
-        iccProfileData = new char[iccProfileDataLength];
-        memcpy(iccProfileData, png->getICCPData(), iccProfileDataLength);
+        colorProfile = LCMSColorProfile::create(png->getICCPData(), iccProfileDataLength);
     }
     
     
@@ -359,11 +282,11 @@ ImageContainer* it_nullable ImageContainer::_tryLoadPNG(const char* it_nonnull p
     // Clean up
     PNGImageRelease(png);
     
-    return new ImageContainer(pixelFormat, sRGB, false, false, contents, width, height, depth, iccProfileData, iccProfileDataLength);
+    return new ImageContainer(pixelFormat, sRGB, false, false, contents, width, height, depth, colorProfile);
 }
 
 
-ImageContainer* it_nullable ImageContainer::_tryLoadOpenEXR(const char* it_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnull path) SWIFT_RETURNS_RETAINED {
     // Check if it's an EXR file
     if (IsEXR(path) != TINYEXR_SUCCESS) {
         return nullptr;
@@ -419,25 +342,13 @@ ImageContainer* it_nullable ImageContainer::_tryLoadOpenEXR(const char* it_nonnu
     }
     
     // Create image container
-    auto pixelFormat = ImagePixelFormat();
-    pixelFormat.numComponents = header.num_channels;
-    for (auto i = 0; i < header.num_channels; i++) {
-        pixelFormat.components[i].channel = static_cast<ImagePixelChannel>(i);
-        pixelFormat.components[i].type = PixelComponentType::float16;
-    }
-    pixelFormat.size = header.num_channels * 2;
+    auto pixelFormat = ImagePixelFormat(PixelComponentType::float16, header.num_channels);
+    
     // Assume Rec. 709 color profile
     auto rec709 = LCMSColorProfile::createRec709();
-    auto profileSize = rec709->getSize();
-    auto profileData = copyData(rec709->getData(), profileSize);
     
-    //auto linear = rec709->createLinear();
-    //auto profileSize = linear->getSize();
-    //auto profileData = copyData(linear->getData(), profileSize);
-    //LCMSColorProfileRelease(linear);
-    
-    LCMSColorProfileRelease(rec709);
-    auto container = new ImageContainer(pixelFormat, false, false, true, contents, width, height, depth, profileData, profileSize);
+    // Create container
+    auto container = new ImageContainer(pixelFormat, false, false, true, contents, width, height, depth, rec709);
     
     // Clean up
     free(exrContents);
@@ -447,21 +358,24 @@ ImageContainer* it_nullable ImageContainer::_tryLoadOpenEXR(const char* it_nonnu
 }
 
 
-ImageContainer* it_nullable ImageContainer::load(const char* it_nullable path, bool assumeSRGB) {
+ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, bool assumeSRGB) {
+    // Get image name
+    auto imageName = _getName(path);
+    
     // Try to load as a PNG image
     {
         auto png = _tryLoadPNG(path, assumeSRGB);
         if (png) {
-            printf("Image is loaded using LibPNG\n");
+            printf("Image \"%s\" is loaded using LibPNG\n", imageName);
             return png;
         }
     }
     
     // Try to load as an OpenEXR image
     {
-        auto exr = _tryLoadOpenEXR(path, assumeSRGB);
+        auto exr = _tryLoadOpenEXR(path);
         if (exr) {
-            printf("Image is loaded using tinyexr\n");
+            printf("Image \"%s\" is loaded using tinyexr\n", imageName);
             return exr;
         }
     }
@@ -470,6 +384,7 @@ ImageContainer* it_nullable ImageContainer::load(const char* it_nullable path, b
     auto is16Bit = stbi_is_16_bit(path);
     auto isHdr = stbi_is_hdr(path);
     if (isHdr) {
+        assumeSRGB = false;
         is16Bit = true;
     }
     
@@ -488,13 +403,7 @@ ImageContainer* it_nullable ImageContainer::load(const char* it_nullable path, b
         return nullptr;
     }
     
-    ImagePixelFormat pixelFormat = {};
-    pixelFormat.numComponents = numComponents;
-    pixelFormat.size = numComponents * (is16Bit ? 2 : 1);
-    for (auto i = 0; i < numComponents; i++) {
-        pixelFormat.components[i].channel = static_cast<ImagePixelChannel>(i);
-        pixelFormat.components[i].type = is16Bit ? PixelComponentType::float16 : PixelComponentType::uint8;
-    }
+    auto pixelFormat = ImagePixelFormat(is16Bit ? PixelComponentType::float16 : PixelComponentType::uint8, numComponents);
     
     // Copy pixel information
     auto contentsSize = width * height * numComponents * (is16Bit ? 2 : 1);
@@ -523,24 +432,30 @@ ImageContainer* it_nullable ImageContainer::load(const char* it_nullable path, b
     
     stbi_image_free(components);
     
-    printf("Image is loaded using stb_image\n");
-    return new ImageContainer(pixelFormat, assumeSRGB, true, isHdr, contents, width, height, 1, nullptr, 0);
+    // For hdr images, assume color profile to be Rec. 2020 with linear color transfer function
+    LCMSColorProfile* fn_nullable colorProfile = nullptr;
+    if (isHdr) {
+        auto rec2020 = LCMSColorProfile::createRec2020();
+        if (rec2020) {
+            colorProfile = rec2020->createLinear();
+            LCMSColorProfileRelease(rec2020);
+        }
+    }
+    
+    printf("Image \"%s\" is loaded using stb_image\n", imageName);
+    return new ImageContainer(pixelFormat, assumeSRGB, true, isHdr, contents, width, height, 1, colorProfile);
 }
 
 
-ImageContainer* it_nonnull ImageContainer::copy() {
+ImageContainer* fn_nonnull ImageContainer::copy() {
     // Copy contents
-    auto contentsCopySize = _width * _height * _depth * _pixelFormat.size;
+    auto contentsCopySize = _width * _height * _depth * _pixelFormat.getSize();
     auto contentsCopy = new char[contentsCopySize];
     std::memcpy(contentsCopy, _contents, contentsCopySize);
     
-    // Copy ICC profile data if presented
-    char* iccProfileCopy = nullptr;
-    if (_iccProfileData && _iccProfileDataLength > 0) {
-        iccProfileCopy = new char[_iccProfileDataLength];
-        std::memcpy(iccProfileCopy, _iccProfileData, _iccProfileDataLength);
-    }
+    // Retain ICC profile
+    auto colorProfile = LCMSColorProfileRetain(_colorProfile);
     
     // Create a new ImageContainer instance
-    return new ImageContainer(_pixelFormat, _sRGB, _linear, _hdr, contentsCopy, _width, _height, _depth, iccProfileCopy, _iccProfileDataLength);
+    return new ImageContainer(_pixelFormat, _sRGB, _linear, _hdr, contentsCopy, _width, _height, _depth, colorProfile);
 }
