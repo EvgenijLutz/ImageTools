@@ -39,4 +39,6 @@ public:
     
     void setColorProfile(LCMSColorProfile* fn_nullable colorProfile);
     bool convertColorProfile(LCMSColorProfile* fn_nullable colorProfile);
+    
+    void resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth);
 } SWIFT_SHARED_REFERENCE(ImageEditorRetain, ImageEditorRelease);

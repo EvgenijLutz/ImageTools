@@ -103,35 +103,13 @@ bool ImageEditor::convertColorProfile(LCMSColorProfile* fn_nullable colorProfile
         return false;
     }
     
-    // Same colour profile
-    if (_image->_colorProfile == colorProfile) {
-        return true;
-    }
-    
-    // Create an image for colour conversion
-    auto pixelFormat = _image->_pixelFormat;
-    auto cmsImage = LCMSImage::create(_image->_contents,
-                                      _image->_width, _image->_height,
-                                      pixelFormat.numComponents, pixelFormat.getComponentSize(),
-                                      _image->_hdr,
-                                      _image->_colorProfile);
-    if (cmsImage == nullptr) {
-        return false;
-    }
-    
     // Convert colour profile
-    auto converted = cmsImage->convertColorProfile(colorProfile);
-    if (converted == false) {
-        LCMSImageRelease(cmsImage);
-        return false;
-    }
-    
-    // Apply changes
-    std::memcpy(_image->_contents, cmsImage->getData(), cmsImage->getDataSize());
-    setColorProfile(colorProfile);
-    
-    // Clean up
-    LCMSImageRelease(cmsImage);
-    
-    return true;
+    return _image->convertColourProfile(colorProfile);
+}
+
+
+void ImageEditor::resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) {
+    auto resampled = _image->createResampled(algorithm, quality, width, height, depth);
+    ImageContainerRelease(_image);
+    _image = resampled;
 }

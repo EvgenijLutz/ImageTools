@@ -22,14 +22,6 @@ public extension PixelComponentType {
 }
 
 
-public extension ImagePixelComponent {
-    /// Returns size in bytes
-    var size: Int {
-        getPixelComponentTypeSize(type)
-    }
-}
-
-
 public extension ImageContainer {
     /// Loads an image from a path.
     ///

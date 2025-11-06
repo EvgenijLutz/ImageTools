@@ -58,18 +58,6 @@ enum class PixelComponentType: long {
 long getPixelComponentTypeSize(PixelComponentType type);
 
 
-struct ImagePixelComponent {
-    /// Channel name.
-    ImagePixelChannel channel;
-    
-    /// Component type.
-    PixelComponentType type;
-    
-    
-    bool operator == (const ImagePixelComponent& other) const;
-};
-
-
 /// Pixel format.
 ///
 /// Contains information of every channel.
@@ -99,6 +87,158 @@ struct ImagePixelFormat {
     
     
     bool operator == (const ImagePixelFormat& other) const;
+};
+
+
+enum class ResamplingAlgorithm: long {
+    lanczos = 0
+};
+
+
+union PixelPosition {
+    float contents[3];
+    struct {
+        float x;
+        float y;
+        float z;
+    };
+    
+    PixelPosition(float x, float y, float z): x(x), y(y), z(z) { }
+    
+    PixelPosition operator + (const PixelPosition& other) const {
+        return PixelPosition(x + other.x, y + other.y,  z + other.z);
+    }
+    
+    PixelPosition operator + (float other) const {
+        return PixelPosition(x + other, y + other, z + other);
+    }
+    
+    PixelPosition operator += (const PixelPosition& other) {
+        x += other.x;
+        y += other.y;
+        z += other.z;
+        return *this;
+    }
+    
+    PixelPosition operator - (const PixelPosition& other) const {
+        return PixelPosition(x - other.x, y - other.y, z - other.z);
+    }
+    
+    PixelPosition operator - (float other) const {
+        return PixelPosition(x - other, y - other, z - other);
+    }
+    
+    PixelPosition operator -= (const PixelPosition& other) {
+        x -= other.x;
+        y -= other.y;
+        z -= other.z;
+        return *this;
+    }
+    
+    PixelPosition operator * (const PixelPosition& other) const {
+        return PixelPosition(x * other.x, y * other.y, z * other.z);
+    }
+    
+    PixelPosition operator * (float other) const {
+        return PixelPosition(x * other, y * other, z * other);
+    }
+    
+    PixelPosition operator *= (float other) {
+        x *= other;
+        y *= other;
+        z *= other;
+        return *this;
+    }
+    
+    PixelPosition operator / (float other) const {
+        return PixelPosition(x / other, y / other, z / other);
+    }
+    
+    PixelPosition operator /= (float other) {
+        x /= other;
+        y /= other;
+        z /= other;
+        return *this;
+    }
+};
+
+
+union ImagePixel {
+    float contents[4];
+    struct {
+        float r;
+        float g;
+        float b;
+        float a;
+    };
+    
+    ImagePixel operator + (const ImagePixel& other) const {
+        return {
+            .r = r + other.r,
+            .g = g + other.g,
+            .b = b + other.b,
+            .a = a + other.a
+        };
+    }
+    
+    ImagePixel operator += (const ImagePixel& other) {
+        r += other.r;
+        g += other.g;
+        b += other.b;
+        a += other.a;
+        return *this;
+    }
+    
+    ImagePixel operator - (const ImagePixel& other) const {
+        return {
+            .r = r - other.r,
+            .g = g - other.g,
+            .b = b - other.b,
+            .a = a - other.a
+        };
+    }
+    
+    ImagePixel operator -= (const ImagePixel& other) {
+        r -= other.r;
+        g -= other.g;
+        b -= other.b;
+        a -= other.a;
+        return *this;
+    }
+    
+    ImagePixel operator * (float other) const {
+        return {
+            .r = r * other,
+            .g = g * other,
+            .b = b * other,
+            .a = a * other
+        };
+    }
+    
+    ImagePixel operator *= (float other) {
+        r *= other;
+        g *= other;
+        b *= other;
+        a *= other;
+        return *this;
+    }
+    
+    ImagePixel operator / (float other) const {
+        return {
+            .r = r / other,
+            .g = g / other,
+            .b = b / other,
+            .a = a / other
+        };
+    }
+    
+    ImagePixel operator /= (float other) {
+        r /= other;
+        g /= other;
+        b /= other;
+        a /= other;
+        return *this;
+    }
 };
 
 
@@ -137,7 +277,11 @@ private:
     friend ImageContainer* fn_nullable ImageContainerRetain(ImageContainer* fn_nullable image) SWIFT_RETURNS_UNRETAINED;
     friend void ImageContainerRelease(ImageContainer* fn_nullable image);
     
+    bool convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
+    void setPixel(ImagePixel pixel, long x, long y, long z);
+    
 public:
+    static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
     
@@ -154,9 +298,15 @@ public:
     
     LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     
+    ImagePixel getPixel(long x, long y, long z);
+    
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
+    
+    ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) SWIFT_RETURNS_RETAINED SWIFT_NAME(createResampled(_:quality:width:height:depth:));
+    void generateCubeMap();
 }
 SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease)
 SWIFT_UNCHECKED_SENDABLE;

@@ -81,11 +81,6 @@ long getPixelComponentTypeSize(PixelComponentType type) {
 }
 
 
-bool ImagePixelComponent::operator == (const ImagePixelComponent& other) const {
-    return channel == other.channel && type == other.type;
-}
-
-
 ImagePixelFormat::ImagePixelFormat(PixelComponentType componentType, long numComponents, bool hasAlpha):
 componentType(componentType),
 numComponents(numComponents),
@@ -159,6 +154,15 @@ ImageContainer::~ImageContainer() {
     LCMSColorProfileRelease(_colorProfile);
     
     //printf("Byeee\n");
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) {
+    width = std::max(1l, width);
+    height = std::max(1l, height);
+    depth = std::max(1l, depth);
+    auto contents = new char [width * height * depth * pixelFormat.getSize()];
+    return new ImageContainer(pixelFormat, sRGB, linear, hdr, contents, width, height, depth, LCMSColorProfileRetain(colorProfile));
 }
 
 
@@ -366,7 +370,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     {
         auto png = _tryLoadPNG(path, assumeSRGB);
         if (png) {
-            printf("Image \"%s\" is loaded using LibPNG\n", imageName);
+            printf("Image \"%s\" is loaded using LibPNG - %ld bytes per component\n", imageName, png->_pixelFormat.getComponentSize());
             return png;
         }
     }
@@ -375,7 +379,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     {
         auto exr = _tryLoadOpenEXR(path);
         if (exr) {
-            printf("Image \"%s\" is loaded using tinyexr\n", imageName);
+            printf("Image \"%s\" is loaded using tinyexr - %ld bytes per component\n", imageName, exr->_pixelFormat.getComponentSize());
             return exr;
         }
     }
@@ -442,8 +446,130 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
         }
     }
     
-    printf("Image \"%s\" is loaded using stb_image\n", imageName);
+    printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
     return new ImageContainer(pixelFormat, assumeSRGB, true, isHdr, contents, width, height, 1, colorProfile);
+}
+
+
+bool ImageContainer::convertColourProfile(LCMSColorProfile* fn_nullable colorProfile) {
+    // Same colour profile
+    if (_colorProfile == colorProfile) {
+        return true;
+    }
+    
+    // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
+    // Create an image for colour conversion
+    auto cmsImage = LCMSImage::create(_contents,
+                                      _width, _height,
+                                      _pixelFormat.numComponents, _pixelFormat.getComponentSize(),
+                                      _hdr,
+                                      _colorProfile);
+    if (cmsImage == nullptr) {
+        return false;
+    }
+    
+    // Convert colour profile
+    auto converted = cmsImage->convertColorProfile(colorProfile);
+    if (converted == false) {
+        LCMSImageRelease(cmsImage);
+        return false;
+    }
+    
+    // Apply changes
+    std::memcpy(_contents, cmsImage->getData(), cmsImage->getDataSize());
+    LCMSColorProfileRelease(_colorProfile);
+    _colorProfile = LCMSColorProfileRetain(colorProfile);
+    
+    // Clean up
+    LCMSImageRelease(cmsImage);
+    
+    // Success
+    return true;
+}
+
+
+ImagePixel ImageContainer::getPixel(long x, long y, long z) {
+    auto pixel = ImagePixel {
+        .r = 0,
+        .g = 0,
+        .b = 0,
+        .a = 0
+    };
+    
+#if 1
+    // Clamp
+    x = std::clamp(x, 0l, _width - 1);
+    y = std::clamp(y, 0l, _height - 1);
+    z = std::clamp(z, 0l, _depth - 1);
+#else
+    if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
+        return pixel;
+    }
+#endif
+    
+    auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
+    switch (_pixelFormat.componentType) {
+        case PixelComponentType::uint8: {
+            auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                pixel.contents[i] = static_cast<float>(uint8Pixel[i]) / std::numeric_limits<uint8_t>::max();
+            }
+            break;
+        }
+            
+        case PixelComponentType::float16: {
+            auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                pixel.contents[i] = static_cast<float>(float16Pixel[i]);
+            }
+            break;
+        }
+            
+        case PixelComponentType::float32: {
+            auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                pixel.contents[i] = float32Pixel[i];
+            }
+            break;
+        }
+    }
+    
+    return pixel;
+}
+
+
+void ImageContainer::setPixel(ImagePixel pixel, long x, long y, long z) {
+    if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
+        return;
+    }
+    
+    auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
+    switch (_pixelFormat.componentType) {
+        case PixelComponentType::uint8: {
+            auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
+                uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
+            }
+            break;
+        }
+            
+        case PixelComponentType::float16: {
+            auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
+            }
+            break;
+        }
+            
+        case PixelComponentType::float32: {
+            auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
+            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                float32Pixel[i] = pixel.contents[i];
+            }
+            break;
+        }
+    }
 }
 
 
@@ -458,4 +584,228 @@ ImageContainer* fn_nonnull ImageContainer::copy() {
     
     // Create a new ImageContainer instance
     return new ImageContainer(_pixelFormat, _sRGB, _linear, _hdr, contentsCopy, _width, _height, _depth, colorProfile);
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType componentType) {
+    if (_pixelFormat.componentType == componentType) {
+        printf("Same component type\n");
+        return ImageContainerRetain(this);
+    }
+    auto pixelFormat = _pixelFormat;
+    pixelFormat.componentType = componentType;
+    auto contents = new char[_width * _height * _depth * pixelFormat.getSize()];
+    
+    
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < _height; y++) {
+            for (auto x = 0; x < _width; x++) {
+                auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
+                auto pixel = getPixel(x, y, z);
+                switch (_pixelFormat.componentType) {
+                    case PixelComponentType::uint8: {
+                        auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
+                        for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                            auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
+                            uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
+                        }
+                        break;
+                    }
+                        
+                    case PixelComponentType::float16: {
+                        auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
+                        for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                            float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
+                        }
+                        break;
+                    }
+                        
+                    case PixelComponentType::float32: {
+                        auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
+                        for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+                            float32Pixel[i] = pixel.contents[i];
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    return new ImageContainer(pixelFormat, _sRGB, _linear, _hdr, contents, _width, _height, _depth, LCMSColorProfileRetain(_colorProfile));
+}
+
+
+inline float sinc(float x) {
+    if (x == 0.0) return 1.0;
+    x *= M_PI;
+    return sin(x) / x;
+}
+
+
+inline float lanczos(float x, float a) {
+    if (fabs(x) >= a) return 0.0;
+    return sinc(x) * sinc(x / a);
+}
+
+
+ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+    long left = floor(x - a + 1);
+    long right = floor(x + a);
+    auto sum = ImagePixel { {0, 0, 0} };
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = lanczos(x - i, a);
+        sum += img->getPixel(i, y, z) * w;
+        totalWeight += w;
+    }
+    return sum / totalWeight;
+}
+
+
+ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+    long left = floor(y - a + 1);
+    long right = floor(y + a);
+    auto sum = ImagePixel { {0, 0, 0} };
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = lanczos(y - i, a);
+        sum += img->getPixel(x, i, z) * w;
+        totalWeight += w;
+    }
+    return sum / totalWeight;
+}
+
+
+ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+    long left = floor(z - a + 1);
+    long right = floor(z + a);
+    auto sum = ImagePixel { {0, 0, 0} };
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = lanczos(z - i, a);
+        sum += img->getPixel(x, y, i) * w;
+        totalWeight += w;
+    }
+    return sum / totalWeight;
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) {
+    // Correct dimensions if wrong
+    width = std::max(1l, width);
+    height = std::max(1l, height);
+    depth = std::max(1l, depth);
+        
+    // Create linear color space
+    LCMSColorProfile* linearProfile = nullptr;
+    bool shouldConvertColourProfile = true;
+    if (_colorProfile) {
+        // Check if the colour profile should be converted at all
+        if (_colorProfile->getIsLinear()) {
+            printf("Colour profile is already linear\n");
+            shouldConvertColourProfile = false;
+        }
+        else {
+            linearProfile = _colorProfile->createLinear();
+            if (linearProfile == nullptr) {
+                linearProfile = LCMSColorProfileRetain(_colorProfile);
+            }
+        }
+    }
+    else if (_sRGB) {
+        // Check if the colour profile should be converted at all
+        if (_linear) {
+            shouldConvertColourProfile = false;
+        }
+        else {
+            auto sRGBProfile = LCMSColorProfile::createSRGB();
+            linearProfile = sRGBProfile->createLinear();
+            if (linearProfile == nullptr) {
+                // This should never happen
+                linearProfile = LCMSColorProfileRetain(sRGBProfile);
+            }
+            LCMSColorProfileRelease(sRGBProfile);
+        }
+    }
+    if (linearProfile == nullptr) {
+        shouldConvertColourProfile = false;
+    }
+    
+    // Create source image with linear color profile
+    ImageContainer* source;
+    if (shouldConvertColourProfile) {
+        printf("Convert colour profile to linear\n");
+        source = copy();
+        shouldConvertColourProfile = source->convertColourProfile(linearProfile);
+    }
+    else {
+        source = ImageContainerRetain(this);
+    }
+    
+    auto tmp1 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, _height, _depth, linearProfile);
+    auto tmp2 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, _depth, linearProfile);
+    auto target = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, depth, linearProfile);
+    
+    auto scale = PixelPosition(static_cast<float>(_width) / width,
+                               static_cast<float>(_height) / height,
+                               static_cast<float>(_depth) / depth);
+    
+    // Horizontal pass
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < _height; y++) {
+            for (auto x = 0; x < width; x++) {
+                float srcX = (x + 0.5) * scale.x - 0.5;
+                auto pixel = sampleLanczosX(source, srcX, y, z, quality);
+                tmp1->setPixel(pixel, x, y, z);
+            }
+        }
+    }
+    
+    // Vertical pass
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < height; y++) {
+            for (auto x = 0; x < width; x++) {
+                float srcY = (y + 0.5) * scale.y - 0.5;
+                auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality);
+                tmp2->setPixel(pixel, x, y, z);
+            }
+        }
+    }
+    
+    // Depth pass
+    if (depth > 1) {
+        for (auto z = 0; z < depth; z++) {
+            for (auto y = 0; y < height; y++) {
+                for (auto x = 0; x < width; x++) {
+                    float srcZ = (z + 0.5) * scale.z - 0.5;
+                    auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality);
+                    target->setPixel(pixel, x, y, z);
+                }
+            }
+        }
+    }
+    else {
+        // We often work with 2D images, this shortcut saves us a bif of time
+        std::memcpy(target->_contents, tmp2->_contents, width * height * depth * _pixelFormat.getSize());
+    }
+    
+    // Convert back colour profile if needed
+    if (shouldConvertColourProfile) {
+        printf("Convert colour profile back to non-linear\n");
+        target->convertColourProfile(_colorProfile);
+    }
+    
+    ImageContainerRelease(tmp2);
+    ImageContainerRelease(tmp1);
+    ImageContainerRelease(source);
+    LCMSColorProfileRelease(linearProfile);
+    
+    printf("Resampling completed\n");
+    return target;
+}
+
+
+void ImageContainer::generateCubeMap() {
+    //
 }
