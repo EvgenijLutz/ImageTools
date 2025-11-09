@@ -604,7 +604,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
                 auto pixel = getPixel(x, y, z);
                 switch (_pixelFormat.componentType) {
                     case PixelComponentType::uint8: {
-                        auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
+                        auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
                         for (auto i = 0; i < _pixelFormat.numComponents; i++) {
                             auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
                             uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
@@ -613,7 +613,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
                     }
                         
                     case PixelComponentType::float16: {
-                        auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
+                        auto float16Pixel = reinterpret_cast<__fp16*>(contents) + index;
                         for (auto i = 0; i < _pixelFormat.numComponents; i++) {
                             float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
                         }
@@ -621,7 +621,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
                     }
                         
                     case PixelComponentType::float32: {
-                        auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
+                        auto float32Pixel = reinterpret_cast<float*>(contents) + index;
                         for (auto i = 0; i < _pixelFormat.numComponents; i++) {
                             float32Pixel[i] = pixel.contents[i];
                         }
