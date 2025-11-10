@@ -489,12 +489,7 @@ bool ImageContainer::convertColourProfile(LCMSColorProfile* fn_nullable colorPro
 
 
 ImagePixel ImageContainer::getPixel(long x, long y, long z) {
-    auto pixel = ImagePixel {
-        .r = 0,
-        .g = 0,
-        .b = 0,
-        .a = 0
-    };
+    auto pixel = ImagePixel();
     
 #if 1
     // Clamp
@@ -602,7 +597,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
             for (auto x = 0; x < _width; x++) {
                 auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
                 auto pixel = getPixel(x, y, z);
-                switch (_pixelFormat.componentType) {
+                switch (componentType) {
                     case PixelComponentType::uint8: {
                         auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
                         for (auto i = 0; i < _pixelFormat.numComponents; i++) {
@@ -652,7 +647,7 @@ inline float lanczos(float x, float a) {
 ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
     long left = floor(x - a + 1);
     long right = floor(x + a);
-    auto sum = ImagePixel { {0, 0, 0} };
+    auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
         float w = lanczos(x - i, a);
@@ -666,7 +661,7 @@ ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, floa
 ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
     long left = floor(y - a + 1);
     long right = floor(y + a);
-    auto sum = ImagePixel { {0, 0, 0} };
+    auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
         float w = lanczos(y - i, a);
@@ -680,7 +675,7 @@ ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, floa
 ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
     long left = floor(z - a + 1);
     long right = floor(z + a);
-    auto sum = ImagePixel { {0, 0, 0} };
+    auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
         float w = lanczos(z - i, a);

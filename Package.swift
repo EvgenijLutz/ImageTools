@@ -52,7 +52,6 @@ let package = Package(
                 .product(name: "ASTCEncoderC", package: "ASTCEncoder")
             ],
             cxxSettings: [
-                //.enableWarning("return-type"),
                 .enableWarning("all")
             ]
         ),
