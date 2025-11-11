@@ -115,22 +115,6 @@ bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
 }
 
 
-ImageContainer* fn_nullable ImageContainerRetain(ImageContainer* fn_nullable image) {
-    if (image) {
-        image->_referenceCounter.fetch_add(1);
-    }
-    
-    return image;
-}
-
-
-void ImageContainerRelease(ImageContainer* fn_nullable image) {
-    if (image && image->_referenceCounter.fetch_sub(1) == 1) {
-        delete image;
-    }
-}
-
-
 ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile):
 _referenceCounter(1),
 _pixelFormat(pixelFormat),
@@ -437,6 +421,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     stbi_image_free(components);
     
     // For hdr images, assume color profile to be Rec. 2020 with linear color transfer function
+    // Actually, the format assumes CIE 1931 RGB primaries with D65 white
     LCMSColorProfile* fn_nullable colorProfile = nullptr;
     if (isHdr) {
         auto rec2020 = LCMSColorProfile::createRec2020();
@@ -801,6 +786,37 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
 }
 
 
-void ImageContainer::generateCubeMap() {
-    //
+//void ImageContainer::generateCubeMap() {
+//    // https://stackoverflow.com/questions/29678510/convert-21-equirectangular-panorama-to-cube-map
+//}
+
+
+
+ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockSize, float quality, bool ldrAlpha, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
+    // Handle errors
+    auto error = ASTCErrorInfo();
+    
+    // Create an image to compress
+    auto integerComponents = _pixelFormat.componentType == PixelComponentType::uint8;
+    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, _linear, _hdr, ldrAlpha, error);
+    if (rawImage == nullptr) {
+        printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
+        return nullptr;
+    }
+    
+    // Compress image
+    auto astcImage = rawImage->compress(blockSize, quality, error, userInfo, progressCallback);
+    if (rawImage == nullptr) {
+        printf("Could not compress an ASTCRawImage: %s\n", error.getErrorMessage());
+        ASTCRawImageRelease(rawImage);
+        return nullptr;
+    }
+    
+    // Clean up
+    ASTCRawImageRelease(rawImage);
+    
+    return astcImage;
 }
+
+
+FN_IMPLEMENT_SWIFT_INTERFACE1(ImageContainer)

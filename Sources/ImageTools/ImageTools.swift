@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import LittleCMS
 @_exported import ImageToolsC
 
 
@@ -65,17 +66,14 @@ public extension ImageContainer {
             
             let cgColorProfile: CGColorSpace = try {
                 // Check if there is iCC profile
-                if let colorProfile, colorProfile.size > 0 {
-                    let iccProfileData = Data(bytes: colorProfile.data, count: Int(colorProfile.size))
-                    if let colorProfile = CGColorSpace(iccData: iccProfileData as CFData) {
-                        if hdr {
-                            if let extendedColorProfile = CGColorSpaceCreateExtended(colorProfile) {
-                                return extendedColorProfile
-                            }
+                if let colorProfile = colorProfile?.colorSpace {
+                    if hdr {
+                        if let extendedColorProfile = CGColorSpaceCreateExtended(colorProfile) {
+                            return extendedColorProfile
                         }
-                        
-                        return colorProfile
                     }
+                    
+                    return colorProfile
                 }
                 
                 let colorSpaceName: CFString = {

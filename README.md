@@ -56,3 +56,9 @@ func loadImage(path: String) async throws -> CGImage {
 In the heart of the package lays the `ImageContainer`. This object is thread-safe. 
 
 `ImageEditor` allows you to perform mutations to a copy of an `ImageContainer`.
+
+
+## TODO:
+Include the following libraries:
+- [OpenEXR](https://github.com/AcademySoftwareFoundation/openexr) or is it overkill and tinyexr is enough?
+- [ImageMagick](https://github.com/ImageMagick/ImageMagick) ?

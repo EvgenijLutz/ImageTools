@@ -8,8 +8,9 @@
 #pragma once
 
 #include <ImageToolsC/Common.hpp>
-#include <LCMS2C/LCMS2C.hpp>
 #include <ImageToolsC/ImagePixel.hpp>
+#include <LCMS2C/LCMS2C.hpp>
+#include <ASTCEncoderC/ASTCEncoderC.hpp>
 
 
 class ImageContainer;
@@ -128,8 +129,7 @@ private:
     
     
     friend class ImageEditor;
-    friend ImageContainer* fn_nullable ImageContainerRetain(ImageContainer* fn_nullable image) SWIFT_RETURNS_UNRETAINED;
-    friend void ImageContainerRelease(ImageContainer* fn_nullable image);
+    FN_FRIEND_SWIFT_INTERFACE(ImageContainer)
     
     bool convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
     void setPixel(ImagePixel pixel, long x, long y, long z);
@@ -152,7 +152,7 @@ public:
     
     LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     
-    ImagePixel getPixel(long x, long y, long z);
+    ImagePixel getPixel(long x, long y, long z = 0);
     
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
@@ -160,7 +160,14 @@ public:
     
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
     ImageContainer* fn_nonnull createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) SWIFT_RETURNS_RETAINED SWIFT_NAME(createResampled(_:quality:width:height:depth:));
-    void generateCubeMap();
+    
+    //void generateCubeMap();
+    
+    [[nodiscard("Don't forget to release the image using the ASTCImageRelease function.")]]
+    ASTCImage* fn_nullable createASTCCompressed(ASTCBlockSize blockSize, float quality, bool ldrAlpha = true, void* fn_nullable userInfo fn_noescape = nullptr, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__createASTCCompressedUnsafe(blockSize:quality:ldrAlpha:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
 }
-SWIFT_SHARED_REFERENCE(ImageContainerRetain, ImageContainerRelease)
+FN_SWIFT_INTERFACE(ImageContainer)
 SWIFT_UNCHECKED_SENDABLE;
+
+
+FN_DEFINE_SWIFT_INTERFACE(ImageContainer)
