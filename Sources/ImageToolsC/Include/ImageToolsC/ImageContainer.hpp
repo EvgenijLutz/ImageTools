@@ -131,11 +131,14 @@ private:
     friend class ImageEditor;
     FN_FRIEND_SWIFT_INTERFACE(ImageContainer)
     
-    bool convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
-    void setPixel(ImagePixel pixel, long x, long y, long z);
+    void _assignColourProfile(LCMSColorProfile* fn_nullable colorProfile);
+    bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
+    void _setPixel(ImagePixel pixel, long x, long y, long z);
     
 public:
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
+    // TODO: Implement conversion from ASTCRawImage or ASTCImage
+    //static ImageContainer* fn_nonnull create(ASTCRawImage* fn_nonnull decompressedImage, ImageContainer* fn_nonnull originalImage);
     static ImageContainer* fn_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
     
@@ -159,7 +162,11 @@ public:
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
     
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
+    
+    /// Estimates number of possible mip levels.
+    long calculateMipLevelCount();
     ImageContainer* fn_nonnull createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) SWIFT_RETURNS_RETAINED SWIFT_NAME(createResampled(_:quality:width:height:depth:));
+    ImageContainer* fn_nonnull createDownsampled(ResamplingAlgorithm algorithm, float quality) SWIFT_RETURNS_RETAINED SWIFT_NAME(createDownsampled(_:quality:));
     
     //void generateCubeMap();
     

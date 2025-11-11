@@ -436,13 +436,33 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
 }
 
 
-bool ImageContainer::convertColourProfile(LCMSColorProfile* fn_nullable colorProfile) {
+void ImageContainer::_assignColourProfile(LCMSColorProfile* fn_nullable colorProfile) {
+    // Same colour profile
+    if (_colorProfile == colorProfile) {
+        return;
+    }
+    
+    // Release old colour profile
+    LCMSColorProfileRelease(_colorProfile);
+    
+    // Assign new colour profile
+    _colorProfile = LCMSColorProfileRetain(colorProfile);
+    
+    // Check if colour profile is linear
+    if (_colorProfile) {
+        _linear = _colorProfile->getIsLinear();
+    }
+}
+
+
+bool ImageContainer::_convertColourProfile(LCMSColorProfile* fn_nullable colorProfile) {
     // Same colour profile
     if (_colorProfile == colorProfile) {
         return true;
     }
     
     // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
+    // TODO: For instance, struct EphemeralLCMSImage { /* ... */ };
     // Create an image for colour conversion
     auto cmsImage = LCMSImage::create(_contents,
                                       _width, _height,
@@ -464,6 +484,11 @@ bool ImageContainer::convertColourProfile(LCMSColorProfile* fn_nullable colorPro
     std::memcpy(_contents, cmsImage->getData(), cmsImage->getDataSize());
     LCMSColorProfileRelease(_colorProfile);
     _colorProfile = LCMSColorProfileRetain(colorProfile);
+    
+    // Check if colour profile is linear
+    if (_colorProfile) {
+        _linear = _colorProfile->getIsLinear();
+    }
     
     // Clean up
     LCMSImageRelease(cmsImage);
@@ -518,7 +543,7 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
 }
 
 
-void ImageContainer::setPixel(ImagePixel pixel, long x, long y, long z) {
+void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
     if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
         return;
     }
@@ -671,6 +696,25 @@ ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, floa
 }
 
 
+static long _calculateMipCount(long size) {
+    auto count = 1;
+    auto currentSize = size;
+    while (currentSize > 1) {
+        count += 1;
+        currentSize /= 2;
+    }
+    return count;
+}
+
+
+long ImageContainer::calculateMipLevelCount() {
+    auto widthCount = _calculateMipCount(_width);
+    auto heightCount = _calculateMipCount(_height);
+    auto depthCount = _calculateMipCount(_depth);
+    return std::max(std::max(widthCount, heightCount), depthCount);
+}
+
+
 ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) {
     // Correct dimensions if wrong
     width = std::max(1l, width);
@@ -685,10 +729,13 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
         if (_colorProfile->getIsLinear()) {
             printf("Colour profile is already linear\n");
             shouldConvertColourProfile = false;
+            linearProfile = LCMSColorProfileRetain(_colorProfile);
         }
         else {
             linearProfile = _colorProfile->createLinear();
             if (linearProfile == nullptr) {
+                // This should never happen
+                printf("Could not convert to linear colour profile\n");
                 linearProfile = LCMSColorProfileRetain(_colorProfile);
             }
         }
@@ -703,6 +750,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
             linearProfile = sRGBProfile->createLinear();
             if (linearProfile == nullptr) {
                 // This should never happen
+                printf("Could not convert to linear colour profile\n");
                 linearProfile = LCMSColorProfileRetain(sRGBProfile);
             }
             LCMSColorProfileRelease(sRGBProfile);
@@ -717,7 +765,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     if (shouldConvertColourProfile) {
         printf("Convert colour profile to linear\n");
         source = copy();
-        shouldConvertColourProfile = source->convertColourProfile(linearProfile);
+        shouldConvertColourProfile = source->_convertColourProfile(linearProfile);
     }
     else {
         source = ImageContainerRetain(this);
@@ -737,7 +785,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
             for (auto x = 0; x < width; x++) {
                 float srcX = (x + 0.5) * scale.x - 0.5;
                 auto pixel = sampleLanczosX(source, srcX, y, z, quality);
-                tmp1->setPixel(pixel, x, y, z);
+                tmp1->_setPixel(pixel, x, y, z);
             }
         }
     }
@@ -748,7 +796,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
             for (auto x = 0; x < width; x++) {
                 float srcY = (y + 0.5) * scale.y - 0.5;
                 auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality);
-                tmp2->setPixel(pixel, x, y, z);
+                tmp2->_setPixel(pixel, x, y, z);
             }
         }
     }
@@ -760,7 +808,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
                 for (auto x = 0; x < width; x++) {
                     float srcZ = (z + 0.5) * scale.z - 0.5;
                     auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality);
-                    target->setPixel(pixel, x, y, z);
+                    target->_setPixel(pixel, x, y, z);
                 }
             }
         }
@@ -773,7 +821,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     // Convert back colour profile if needed
     if (shouldConvertColourProfile) {
         printf("Convert colour profile back to non-linear\n");
-        target->convertColourProfile(_colorProfile);
+        target->_convertColourProfile(_colorProfile);
     }
     
     ImageContainerRelease(tmp2);
@@ -783,6 +831,11 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     
     printf("Resampling completed\n");
     return target;
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::createDownsampled(ResamplingAlgorithm algorithm, float quality) {
+    return createResampled(algorithm, quality, _width / 2, _height / 2, _depth / 2);
 }
 
 

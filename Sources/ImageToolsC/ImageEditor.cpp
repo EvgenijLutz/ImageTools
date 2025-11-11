@@ -84,16 +84,8 @@ void ImageEditor::setColorProfile(LCMSColorProfile* fn_nullable colorProfile) {
         return;
     }
     
-    // Same colour profile
-    if (_image->_colorProfile == colorProfile) {
-        return;
-    }
-    
-    // Release old colour profile
-    LCMSColorProfileRelease(_image->_colorProfile);
-    
     // Assign new colour profile
-    _image->_colorProfile = LCMSColorProfileRetain(colorProfile);
+    _image->_assignColourProfile(colorProfile);
 }
 
 
@@ -104,7 +96,7 @@ bool ImageEditor::convertColorProfile(LCMSColorProfile* fn_nullable colorProfile
     }
     
     // Convert colour profile
-    return _image->convertColourProfile(colorProfile);
+    return _image->_convertColourProfile(colorProfile);
 }
 
 

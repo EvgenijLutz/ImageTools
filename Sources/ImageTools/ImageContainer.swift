@@ -20,11 +20,11 @@ func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: F
 }
 
 
-fileprivate struct CallbackContext: Sendable {
-    var progressCallback: @Sendable (Float) -> Void
+fileprivate struct CallbackContext {
+    var progressCallback: (Float) -> Void
 }
 
-public typealias ImageContainerCallback = @Sendable (_ progress: Float) -> Void
+public typealias ImageContainerCallback = (_ progress: Float) -> Void
 
 func withImageContainerCallback<T>(_ callback: ImageContainerCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {
     return try withoutActuallyEscaping(callback) { escapingClosure in
@@ -42,7 +42,11 @@ public extension ImageContainer {
     //}
     
     
-    func createASTCCompressed(blockSize: ASTCBlockSize, quality: ASTCCompressionQuality, ldrAlpha: Bool, _ progressCallback: ImageContainerCallback = { _ in }) throws -> ASTCImage {
+    func createASTCCompressed(blockSize: ASTCBlockSize,
+                              quality: ASTCCompressionQuality,
+                              ldrAlpha: Bool,
+                              _ progressCallback: ImageContainerCallback = { _ in }
+    ) throws -> ASTCImage {
         return try withImageContainerCallback(progressCallback) { userInfo in
             let image = __createASTCCompressedUnsafe(blockSize: blockSize,
                                                      quality: quality,
