@@ -30,7 +30,7 @@ private:
 public:
     static ImageEditor* fn_nonnull create() SWIFT_NAME(init()) SWIFT_RETURNS_RETAINED;
     
-    static ImageEditor* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nullable load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_NAME(__loadUnsafe(_:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     void edit(ImageContainer* fn_nullable image);
     

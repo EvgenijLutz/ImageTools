@@ -7,7 +7,7 @@ ImageTools uses the following libraries:
 - [tinyexr](https://github.com/syoyo/tinyexr) v1.0.12 to load _.exr_ images.
 - [stb](https://github.com/nothings/stb)'s stb_image.h to load other commonly used image files like _.jpg_, _.png_, _.tga_, _.bmp_, _.psd_, _.gif_, _.hdr_ and _.pic_.
 - [LittleCMS](https://github.com/EvgenijLutz/LittleCMS) (precompiled [Little-CMS](https://github.com/mm2/Little-CMS)) to convert between color profiles.
-- [ASTCEncoder](https://github.com/EvgenijLutz/ASTCEncoder) to convert loaded images into ASTC-compressed textures.
+- [ASTCEncoder](https://github.com/EvgenijLutz/ASTCEncoder) (precompiled [astc-encoder](https://github.com/ARM-software/astc-encoder)) to convert loaded images into ASTC-compressed textures.
 
 tinyexr is used without its zlib implementation in _miniz.c_ and _miniz.h_. Instead, ImageTools uses system provided zlib that is already linked by LibPNG.
 
@@ -53,7 +53,7 @@ func loadImage(path: String) async throws -> CGImage {
 
 ## Architecture
 
-In the heart of the package lays the `ImageContainer`. This object is thread-safe. 
+In the heart of the package lays the `ImageContainer` class. This object is thread-safe. 
 
 `ImageEditor` allows you to perform mutations to a copy of an `ImageContainer`.
 
@@ -61,4 +61,4 @@ In the heart of the package lays the `ImageContainer`. This object is thread-saf
 ## TODO:
 Include the following libraries:
 - [OpenEXR](https://github.com/AcademySoftwareFoundation/openexr) or is it overkill and tinyexr is enough?
-- [ImageMagick](https://github.com/ImageMagick/ImageMagick) ?
+- [ImageMagick](https://github.com/ImageMagick/ImageMagick) or is it overkill and ImageTools already provides the needed interface?

@@ -10,41 +10,10 @@ import LittleCMS
 @_exported import ImageToolsC
 
 
-enum ImageToolsError: Error {
-    case other(_ message: String)
-}
-
-
 public extension PixelComponentType {
     /// Returns size in bytes
     var size: Int {
         getPixelComponentTypeSize(self)
-    }
-}
-
-
-public extension ImageContainer {
-    /// Loads an image from a path.
-    ///
-    /// - Parameter path: Path to load image from.
-    /// - Parameter assumeSRGB: Assume the color profile to be sRGB if it could not be determined during the image loading process.
-    static func load(path: String, assumeSRGB: Bool = true) throws -> sending ImageContainer {
-        let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.__loadUnsafe(cString, assumeSRGB)
-        }
-        
-        guard let image else {
-            throw ImageToolsError.other("Could not open image")
-        }
-        
-        return image
-    }
-    
-    
-    static func load(path: String) async throws -> sending ImageContainer {
-        try await Task {
-            return try ImageContainer.load(path: path)
-        }.value
     }
 }
 

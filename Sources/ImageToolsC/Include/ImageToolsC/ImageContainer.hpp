@@ -9,6 +9,7 @@
 
 #include <ImageToolsC/Common.hpp>
 #include <ImageToolsC/ImagePixel.hpp>
+#include <ImageToolsC/ProgressCallback.hpp>
 #include <LCMS2C/LCMS2C.hpp>
 #include <ASTCEncoderC/ASTCEncoderC.hpp>
 
@@ -105,10 +106,14 @@ private:
     std::atomic<size_t> _referenceCounter;
     
     ImagePixelFormat _pixelFormat;
+    /// Assumption that image's colour profile is sRGB if `_colorProfile` is not set.
     bool _sRGB;
+    /// `_colorProfile`'s ``LCMSColorProfile/getIsLinear()-method`` cached property or assumption that the image has linear colour transfer function if `_colorProfile` is not set.
     bool _linear;
+    /// Assumption that colours
     bool _hdr;
     
+    // bool _borrowedContents;
     char* fn_nonnull _contents;
     long _width;
     long _height;
@@ -120,8 +125,8 @@ private:
     LCMSColorProfile* fn_nullable _colorProfile;
     
     
-    static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* fn_nullable _tryLoadOpenEXR(const char* fn_nonnull path) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path fn_noescape, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable _tryLoadOpenEXR(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     
     
     ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile);
@@ -140,14 +145,14 @@ public:
     // TODO: Implement conversion from ASTCRawImage or ASTCImage
     //static ImageContainer* fn_nonnull create(ASTCRawImage* fn_nonnull decompressedImage, ImageContainer* fn_nonnull originalImage);
     static ImageContainer* fn_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB) SWIFT_NAME(__loadUnsafe(_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_NAME(__loadUnsafe(_:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
     bool getIsSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
     
-    char* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const char* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.getSize(); }
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
@@ -161,12 +166,13 @@ public:
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
     
+    /// Creates a copy of the image container with modifier component type.
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
     
     /// Estimates number of possible mip levels.
     long calculateMipLevelCount();
-    ImageContainer* fn_nonnull createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) SWIFT_RETURNS_RETAINED SWIFT_NAME(createResampled(_:quality:width:height:depth:));
-    ImageContainer* fn_nonnull createDownsampled(ResamplingAlgorithm algorithm, float quality) SWIFT_RETURNS_RETAINED SWIFT_NAME(createDownsampled(_:quality:));
+    ImageContainer* fn_nullable createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createResampledUnsafe(_:quality:width:height:depth:error:userInfo:progressCallback:));
+    ImageContainer* fn_nullable createDownsampled(ResamplingAlgorithm algorithm, float quality, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createDownsampledUnsafe(_:quality:error:userInfo:progressCallback:));
     
     //void generateCubeMap();
     

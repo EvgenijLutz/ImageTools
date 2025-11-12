@@ -47,8 +47,8 @@ ImageEditor* fn_nonnull ImageEditor::create() {
 }
 
 
-ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
-    auto image = ImageContainer::load(path, assumeSRGB);
+ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_RETURNS_RETAINED {
+    auto image = ImageContainer::load(path, assumeSRGB, assumeLinear, assumedColorProfile);
     if (image == nullptr) {
         return nullptr;
     }

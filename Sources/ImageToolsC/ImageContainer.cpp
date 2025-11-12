@@ -176,7 +176,7 @@ static const char* fn_nonnull _getName(const char* fn_nonnull path) {
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull path, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull path fn_noescape, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
     auto isPng = PNGImage::checkIfPNG(path);
     if (isPng == false) {
         return nullptr;
@@ -274,7 +274,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull p
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnull path) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
     // Check if it's an EXR file
     if (IsEXR(path) != TINYEXR_SUCCESS) {
         return nullptr;
@@ -346,7 +346,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
 }
 
 
-ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, bool assumeSRGB) {
+ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) {
     // Get image name
     auto imageName = _getName(path);
     
@@ -368,11 +368,16 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
         }
     }
     
+    // Assumptions
+    auto sRGB = assumeSRGB;
+    auto linear = assumeLinear;
+    auto isHdr = false;
+    
     // Use stb_image to try to load the image
     auto is16Bit = stbi_is_16_bit(path);
-    auto isHdr = stbi_is_hdr(path);
+    isHdr = stbi_is_hdr(path);
     if (isHdr) {
-        assumeSRGB = false;
+        sRGB = false;
         is16Bit = true;
     }
     
@@ -381,6 +386,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     int numComponents = 0;
     auto components = stbi_loadf(path, &width, &height, &numComponents, 0);
     if (components == nullptr) {
+        // TODO: Set ImageToolsError
         auto reason = stbi_failure_reason();
         if (reason) {
             printf("%s\n", reason);
@@ -422,17 +428,22 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     
     // For hdr images, assume color profile to be Rec. 2020 with linear color transfer function
     // Actually, the format assumes CIE 1931 RGB primaries with D65 white
-    LCMSColorProfile* fn_nullable colorProfile = nullptr;
-    if (isHdr) {
-        auto rec2020 = LCMSColorProfile::createRec2020();
-        if (rec2020) {
-            colorProfile = rec2020->createLinear();
-            LCMSColorProfileRelease(rec2020);
-        }
+    LCMSColorProfile* fn_nullable colorProfile = LCMSColorProfileRetain(assumedColorProfile);
+    //if (isHdr) {
+    //    auto rec2020 = LCMSColorProfile::createRec2020();
+    //    if (rec2020) {
+    //        colorProfile = rec2020->createLinear();
+    //        LCMSColorProfileRelease(rec2020);
+    //    }
+    //}
+    
+    // Override linear setting if colourProfile is presented
+    if (colorProfile) {
+        linear = colorProfile->getIsLinear();
     }
     
     printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
-    return new ImageContainer(pixelFormat, assumeSRGB, true, isHdr, contents, width, height, 1, colorProfile);
+    return new ImageContainer(pixelFormat, sRGB, linear, isHdr, contents, width, height, 1, colorProfile);
 }
 
 
@@ -715,11 +726,56 @@ long ImageContainer::calculateMipLevelCount() {
 }
 
 
-ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) {
+ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
     // Correct dimensions if wrong
     width = std::max(1l, width);
     height = std::max(1l, height);
     depth = std::max(1l, depth);
+    
+    // Prepare progress/error handler
+    struct ProgressHandler {
+        ImageToolsError* fn_nullable error;
+        void* fn_nullable userInfo;
+        ImageToolsProgressCallback fn_nullable progressCallback;
+        
+        long numSteps;
+        long currentStep;
+        long stepDistance;
+        
+        bool checkCancellation() {
+            // Don't do anything if
+            if (progressCallback == nullptr) {
+                return false;
+            }
+            
+            currentStep = std::min(currentStep + 1, numSteps);
+            
+            // Continue task
+            if (currentStep % stepDistance != 0) {
+                return false;
+            }
+            
+            // Notify about process milestone
+            auto progress = 1.0f / static_cast<float>(numSteps) * static_cast<float>(currentStep);
+            auto cancelled = progressCallback(userInfo, progress);
+            if (cancelled && error) {
+                error->set(ImageToolsErrorCode::taskCancelled);
+            }
+            return cancelled;
+        }
+    };
+    auto phase1Steps = _height * _depth;
+    auto phase2Steps = height * _depth;
+    auto phase3Steps = depth > 1 ? (height * depth) : (0);
+    auto totalSteps = phase1Steps + phase2Steps + phase3Steps;
+    auto progressHandler = ProgressHandler {
+        .error = error,
+        .userInfo = userInfo,
+        .progressCallback = progressCallback,
+        .numSteps = totalSteps,
+        .currentStep = 0,
+        .stepDistance = totalSteps / 10
+    };
         
     // Create linear color space
     LCMSColorProfile* linearProfile = nullptr;
@@ -727,7 +783,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     if (_colorProfile) {
         // Check if the colour profile should be converted at all
         if (_colorProfile->getIsLinear()) {
-            printf("Colour profile is already linear\n");
+            //printf("Colour profile is already linear\n");
             shouldConvertColourProfile = false;
             linearProfile = LCMSColorProfileRetain(_colorProfile);
         }
@@ -743,6 +799,7 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     else if (_sRGB) {
         // Check if the colour profile should be converted at all
         if (_linear) {
+            //printf("Colour profile is already linear\n");
             shouldConvertColourProfile = false;
         }
         else {
@@ -763,17 +820,29 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     // Create source image with linear color profile
     ImageContainer* source;
     if (shouldConvertColourProfile) {
-        printf("Convert colour profile to linear\n");
+        //printf("Convert colour profile to linear\n");
         source = copy();
+        // TODO: Report progress
         shouldConvertColourProfile = source->_convertColourProfile(linearProfile);
     }
     else {
         source = ImageContainerRetain(this);
     }
     
+    // Intermediate images for a separable filter
     auto tmp1 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, _height, _depth, linearProfile);
     auto tmp2 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, _depth, linearProfile);
-    auto target = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, depth, linearProfile);
+    
+    // Target image
+    ImageContainer* target = nullptr;
+    if (depth > 1) {
+        target = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, depth, linearProfile);
+    }
+    else {
+        // Don't need to allocate extra image, since dimensions of tmp2 and target image are the same
+        // We often work with 2D images, this shortcut saves us a bif of computation time and memory
+        target = ImageContainerRetain(tmp2);
+    }
     
     auto scale = PixelPosition(static_cast<float>(_width) / width,
                                static_cast<float>(_height) / height,
@@ -787,6 +856,15 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
                 auto pixel = sampleLanczosX(source, srcX, y, z, quality);
                 tmp1->_setPixel(pixel, x, y, z);
             }
+            
+            // Check cancellation
+            if (progressHandler.checkCancellation()) {
+                ImageContainerRelease(tmp2);
+                ImageContainerRelease(tmp1);
+                ImageContainerRelease(source);
+                LCMSColorProfileRelease(linearProfile);
+                return nullptr;
+            }
         }
     }
     
@@ -798,10 +876,19 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
                 auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality);
                 tmp2->_setPixel(pixel, x, y, z);
             }
+            
+            // Check cancellation
+            if (progressHandler.checkCancellation()) {
+                ImageContainerRelease(tmp2);
+                ImageContainerRelease(tmp1);
+                ImageContainerRelease(source);
+                LCMSColorProfileRelease(linearProfile);
+                return nullptr;
+            }
         }
     }
     
-    // Depth pass
+    // Depth pass if needed
     if (depth > 1) {
         for (auto z = 0; z < depth; z++) {
             for (auto y = 0; y < height; y++) {
@@ -810,17 +897,23 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
                     auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality);
                     target->_setPixel(pixel, x, y, z);
                 }
+                
+                // Check cancellation
+                if (progressHandler.checkCancellation()) {
+                    ImageContainerRelease(tmp2);
+                    ImageContainerRelease(tmp1);
+                    ImageContainerRelease(source);
+                    LCMSColorProfileRelease(linearProfile);
+                    return nullptr;
+                }
             }
         }
-    }
-    else {
-        // We often work with 2D images, this shortcut saves us a bif of time
-        std::memcpy(target->_contents, tmp2->_contents, width * height * depth * _pixelFormat.getSize());
     }
     
     // Convert back colour profile if needed
     if (shouldConvertColourProfile) {
-        printf("Convert colour profile back to non-linear\n");
+        //printf("Convert colour profile back to non-linear\n");
+        // TODO: Report progress
         target->_convertColourProfile(_colorProfile);
     }
     
@@ -829,13 +922,17 @@ ImageContainer* fn_nonnull ImageContainer::createResampled(ResamplingAlgorithm a
     ImageContainerRelease(source);
     LCMSColorProfileRelease(linearProfile);
     
+    // Notify callback
+    if (progressCallback) {
+        progressCallback(userInfo, 1);
+    }
     printf("Resampling completed\n");
     return target;
 }
 
 
-ImageContainer* fn_nonnull ImageContainer::createDownsampled(ResamplingAlgorithm algorithm, float quality) {
-    return createResampled(algorithm, quality, _width / 2, _height / 2, _depth / 2);
+ImageContainer* fn_nullable ImageContainer::createDownsampled(ResamplingAlgorithm algorithm, float quality, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    return createResampled(algorithm, quality, _width / 2, _height / 2, _depth / 2, error, userInfo, progressCallback);
 }
 
 
