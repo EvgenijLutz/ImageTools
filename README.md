@@ -1,6 +1,8 @@
 # ImageTools
 
-Collection of tools to load and process image data. Available on `macOS 14`, `iOS 17`, `tvOS 17` and `visionOS 1`.
+Gracefully load and process images to get delightful results. _Because you also deserve to be treated like a princess_ ✨
+
+This Swift Package provides a collection of tools to load and process image data. Available on `macOS 14`, `iOS 17`, `tvOS 17` and `visionOS 1`.
 
 ImageTools uses the following libraries:
 - [LibPNG](https://github.com/EvgenijLutz/LibPNG) (precompiled [libpng](https://github.com/pnggroup/libpng)) to load _.png_ images.
