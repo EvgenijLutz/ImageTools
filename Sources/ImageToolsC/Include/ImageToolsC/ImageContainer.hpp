@@ -166,18 +166,20 @@ public:
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
     
+    // TODO: createSplitted(channel[]) throws -> ImageContainer
+    
     /// Creates a copy of the image container with modifier component type.
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
     
     /// Estimates number of possible mip levels.
     long calculateMipLevelCount();
-    ImageContainer* fn_nullable createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createResampledUnsafe(_:quality:width:height:depth:error:userInfo:progressCallback:));
-    ImageContainer* fn_nullable createDownsampled(ResamplingAlgorithm algorithm, float quality, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createDownsampledUnsafe(_:quality:error:userInfo:progressCallback:));
+    ImageContainer* fn_nullable createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createResampledUnsafe(_:quality:width:height:depth:renormalize:error:userInfo:progressCallback:));
+    ImageContainer* fn_nullable createDownsampled(ResamplingAlgorithm algorithm, float quality, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createDownsampledUnsafe(_:quality:renormalize:error:userInfo:progressCallback:));
     
     //void generateCubeMap();
     
     [[nodiscard("Don't forget to release the image using the ASTCImageRelease function.")]]
-    ASTCImage* fn_nullable createASTCCompressed(ASTCBlockSize blockSize, float quality, bool ldrAlpha = true, void* fn_nullable userInfo fn_noescape = nullptr, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__createASTCCompressedUnsafe(blockSize:quality:ldrAlpha:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCImage* fn_nullable createASTCCompressed(ASTCBlockSize blockSize, float quality, bool containsAlpha = true, bool ldrAlpha = true, bool normalMap = false, void* fn_nullable userInfo fn_noescape = nullptr, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__createASTCCompressedUnsafe(blockSize:quality:containsAlpha:ldrAlpha:normalMap:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
 }
 FN_SWIFT_INTERFACE(ImageContainer)
 SWIFT_UNCHECKED_SENDABLE;

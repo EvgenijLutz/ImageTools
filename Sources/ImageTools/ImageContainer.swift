@@ -69,11 +69,12 @@ public extension ImageContainer {
     
     func createResampled(_ algorithm: ResamplingAlgorithm, quality: Float,
                          width: Int, height: Int, depth: Int,
+                         renormalize: Bool,
                          _ progressCallback: ImageContainerCallback = { _ in }
     ) throws -> ImageContainer {
         return try withImageContainerCallback(progressCallback) { userInfo in
             var error = ImageToolsError()
-            let image = __createResampledUnsafe(algorithm, quality: quality, width: width, height: height, depth: depth, error: &error, userInfo: userInfo, progressCallback: imageContainerCCallback)
+            let image = __createResampledUnsafe(algorithm, quality: quality, width: width, height: height, depth: depth, renormalize: renormalize, error: &error, userInfo: userInfo, progressCallback: imageContainerCCallback)
             guard let image else {
                 throw error.unwrapError()
             }
@@ -83,11 +84,12 @@ public extension ImageContainer {
     
     
     func createDownsampled(_ algorithm: ResamplingAlgorithm, quality: Float,
-                         _ progressCallback: ImageContainerCallback = { _ in }
+                           renormalize: Bool,
+                           _ progressCallback: ImageContainerCallback = { _ in }
     ) throws -> ImageContainer {
         return try withImageContainerCallback(progressCallback) { userInfo in
             var error = ImageToolsError()
-            let image = __createDownsampledUnsafe(algorithm, quality: quality, error: &error, userInfo: userInfo, progressCallback: imageContainerCCallback)
+            let image = __createDownsampledUnsafe(algorithm, quality: quality, renormalize: renormalize, error: &error, userInfo: userInfo, progressCallback: imageContainerCCallback)
             guard let image else {
                 throw error.unwrapError()
             }
@@ -98,13 +100,17 @@ public extension ImageContainer {
     
     func createASTCCompressed(blockSize: ASTCBlockSize,
                               quality: ASTCCompressionQuality,
+                              containsAlpha: Bool,
                               ldrAlpha: Bool,
+                              normalMap: Bool,
                               _ progressCallback: ImageContainerCallback = { _ in }
     ) throws -> ASTCImage {
         return try withImageContainerCallback(progressCallback) { userInfo in
             let image = __createASTCCompressedUnsafe(blockSize: blockSize,
                                                      quality: quality,
+                                                     containsAlpha: containsAlpha,
                                                      ldrAlpha: ldrAlpha,
+                                                     normalMap: normalMap,
                                                      userInfo: userInfo,
                                                      progressCallback: imageContainerCCallback)
             

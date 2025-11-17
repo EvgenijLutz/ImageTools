@@ -95,6 +95,14 @@ struct ImagePixel {
     
     ImagePixel(): ImagePixel(0, 0, 0, 0) { }
     
+    float length() const {
+        return std::sqrt(r*r + g*g + b*b);
+    }
+    
+    ImagePixel normalized() const {
+        return *this / length();
+    }
+    
     ImagePixel operator + (const ImagePixel& other) const {
         return ImagePixel(r + other.r,
                           g + other.g,

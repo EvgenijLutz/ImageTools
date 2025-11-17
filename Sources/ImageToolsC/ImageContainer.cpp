@@ -665,7 +665,7 @@ inline float lanczos(float x, float a) {
 }
 
 
-ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
     long left = floor(x - a + 1);
     long right = floor(x + a);
     auto sum = ImagePixel();
@@ -675,11 +675,14 @@ ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, floa
         sum += img->getPixel(i, y, z) * w;
         totalWeight += w;
     }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
     return sum / totalWeight;
 }
 
 
-ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
     long left = floor(y - a + 1);
     long right = floor(y + a);
     auto sum = ImagePixel();
@@ -689,11 +692,14 @@ ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, floa
         sum += img->getPixel(x, i, z) * w;
         totalWeight += w;
     }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
     return sum / totalWeight;
 }
 
 
-ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, float z, float a) {
+ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
     long left = floor(z - a + 1);
     long right = floor(z + a);
     auto sum = ImagePixel();
@@ -702,6 +708,9 @@ ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, floa
         float w = lanczos(z - i, a);
         sum += img->getPixel(x, y, i) * w;
         totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
     }
     return sum / totalWeight;
 }
@@ -726,7 +735,7 @@ long ImageContainer::calculateMipLevelCount() {
 }
 
 
-ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
     // Correct dimensions if wrong
     width = std::max(1l, width);
     height = std::max(1l, height);
@@ -853,7 +862,7 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
         for (auto y = 0; y < _height; y++) {
             for (auto x = 0; x < width; x++) {
                 float srcX = (x + 0.5) * scale.x - 0.5;
-                auto pixel = sampleLanczosX(source, srcX, y, z, quality);
+                auto pixel = sampleLanczosX(source, srcX, y, z, quality, renormalize);
                 tmp1->_setPixel(pixel, x, y, z);
             }
             
@@ -873,7 +882,7 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
         for (auto y = 0; y < height; y++) {
             for (auto x = 0; x < width; x++) {
                 float srcY = (y + 0.5) * scale.y - 0.5;
-                auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality);
+                auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality, renormalize);
                 tmp2->_setPixel(pixel, x, y, z);
             }
             
@@ -894,7 +903,7 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
             for (auto y = 0; y < height; y++) {
                 for (auto x = 0; x < width; x++) {
                     float srcZ = (z + 0.5) * scale.z - 0.5;
-                    auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality);
+                    auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality, renormalize);
                     target->_setPixel(pixel, x, y, z);
                 }
                 
@@ -931,8 +940,8 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
 }
 
 
-ImageContainer* fn_nullable ImageContainer::createDownsampled(ResamplingAlgorithm algorithm, float quality, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
-    return createResampled(algorithm, quality, _width / 2, _height / 2, _depth / 2, error, userInfo, progressCallback);
+ImageContainer* fn_nullable ImageContainer::createDownsampled(ResamplingAlgorithm algorithm, float quality, bool renormalize, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    return createResampled(algorithm, quality, _width / 2, _height / 2, _depth / 2, renormalize, error, userInfo, progressCallback);
 }
 
 
@@ -942,13 +951,13 @@ ImageContainer* fn_nullable ImageContainer::createDownsampled(ResamplingAlgorith
 
 
 
-ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockSize, float quality, bool ldrAlpha, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
+ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockSize, float quality, bool containsAlpha, bool ldrAlpha, bool normalMap, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Handle errors
     auto error = ASTCErrorInfo();
     
     // Create an image to compress
     auto integerComponents = _pixelFormat.componentType == PixelComponentType::uint8;
-    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, _linear, _hdr, ldrAlpha, error);
+    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, _linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
     if (rawImage == nullptr) {
         printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
         return nullptr;
