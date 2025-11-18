@@ -10,6 +10,12 @@ import ImageToolsC
 import ASTCEncoder
 
 
+public typealias ImageContainerCallback = (_ progress: Float) -> Void
+
+fileprivate struct CallbackContext {
+    var progressCallback: ImageContainerCallback
+}
+
 @_cdecl("ImageContainerCCallback")
 fileprivate func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
     userInfo?.withMemoryRebound(to: CallbackContext.self, capacity: 1) { pointer in
@@ -17,13 +23,6 @@ fileprivate func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _
     }
     
     return Task.isCancelled
-}
-
-
-public typealias ImageContainerCallback = (_ progress: Float) -> Void
-
-fileprivate struct CallbackContext {
-    var progressCallback: ImageContainerCallback
 }
 
 func withImageContainerCallback<T>(_ callback: ImageContainerCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {

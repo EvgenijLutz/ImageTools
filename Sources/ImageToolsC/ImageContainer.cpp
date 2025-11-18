@@ -935,7 +935,7 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
     if (progressCallback) {
         progressCallback(userInfo, 1);
     }
-    printf("Resampling completed\n");
+    // Resampling completed
     return target;
 }
 
@@ -953,7 +953,7 @@ ImageContainer* fn_nullable ImageContainer::createDownsampled(ResamplingAlgorith
 
 ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockSize, float quality, bool containsAlpha, bool ldrAlpha, bool normalMap, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Handle errors
-    auto error = ASTCErrorInfo();
+    auto error = ASTCError();
     
     // Create an image to compress
     auto integerComponents = _pixelFormat.componentType == PixelComponentType::uint8;
