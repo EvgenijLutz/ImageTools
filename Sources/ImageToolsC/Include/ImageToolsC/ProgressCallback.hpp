@@ -66,4 +66,11 @@ struct ImageToolsError {
     const char* fn_nonnull getMessage() const {
         return _message;
     }
+    
+    
+    static void set(ImageToolsError* fn_nullable error fn_noescape, const char* fn_nonnull message fn_noescape) {
+        if (error) {
+            error->set(ImageToolsErrorCode::other, message);
+        }
+    }
 };

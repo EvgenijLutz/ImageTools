@@ -37,8 +37,26 @@ public:
     [[nodiscard("Don't forget to release the image using the ImageContainerRelease function.")]]
     ImageContainer* fn_nullable getImageCopy() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_RETAINED;
     
+    bool getIsSRGB() const SWIFT_COMPUTED_PROPERTY;
+    void setIsSRGB(bool value) SWIFT_COMPUTED_PROPERTY;
+    
+    bool getIsLinear() const SWIFT_COMPUTED_PROPERTY;
+    void setIsLinear(bool value) SWIFT_COMPUTED_PROPERTY;
+    
+    bool getIsHDR() const SWIFT_COMPUTED_PROPERTY;
+    void setIsHDR(bool value) SWIFT_COMPUTED_PROPERTY;
+    
+    ImagePixel getPixel(long x, long y, long z = 0);
+    void setPixel(ImagePixel pixel, long x, long y, long z);
+    
+    bool setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr);
+    bool setChannel(long channelIndex, ImageEditor* fn_nonnull sourceEditor fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr);
+    
     void setColorProfile(LCMSColorProfile* fn_nullable colorProfile);
     bool convertColorProfile(LCMSColorProfile* fn_nullable colorProfile);
     
     void resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth);
-} SWIFT_SHARED_REFERENCE(ImageEditorRetain, ImageEditorRelease);
+} FN_SWIFT_INTERFACE(ImageEditor);
+
+
+FN_DEFINE_SWIFT_INTERFACE(ImageEditor)

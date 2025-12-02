@@ -110,7 +110,7 @@ private:
     bool _sRGB;
     /// `_colorProfile`'s ``LCMSColorProfile/getIsLinear()-method`` cached property or assumption that the image has linear colour transfer function if `_colorProfile` is not set.
     bool _linear;
-    /// Assumption that colours
+    /// Assumption that colours extend
     bool _hdr;
     
     // bool _borrowedContents;
@@ -139,6 +139,7 @@ private:
     void _assignColourProfile(LCMSColorProfile* fn_nullable colorProfile);
     bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
     void _setPixel(ImagePixel pixel, long x, long y, long z);
+    bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr);
     
 public:
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;

@@ -589,6 +589,47 @@ void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
 }
 
 
+bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape) {
+    // The same channel wants to be assigned to the same image - no effect, save time by doing nothing
+    if (this == sourceImage && channelIndex == sourceChannelIndex) {
+        return true;
+    }
+    
+    // Image sizes are not equal
+    if (_width != sourceImage->_width || _height != sourceImage->_height || _depth != sourceImage->_depth) {
+        ImageToolsError::set(error, "Image sizes are not equal. Resize the source or destination image first to match the sizes");
+        return false;
+    }
+    
+    // Source channel index out ouf bounds
+    if (channelIndex >= _pixelFormat.numComponents) {
+        ImageToolsError::set(error, "Source channel index out ouf bounds");
+        return false;
+    }
+    
+    // Destination channel index out ouf bounds
+    if (sourceChannelIndex >= sourceImage->_pixelFormat.numComponents) {
+        ImageToolsError::set(error, "Destination channel index out ouf bounds");
+        return false;
+    }
+    
+    // Set the specified component of every pixel
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < _height; y++) {
+            for (auto x = 0; x < _width; x++) {
+                auto destinationPixel = getPixel(x, y, z);
+                auto sourcePixel = sourceImage->getPixel(x, y, z);
+                destinationPixel.contents[channelIndex] = sourcePixel.contents[sourceChannelIndex];
+                _setPixel(destinationPixel, x, y, z);
+            }
+        }
+    }
+    
+    // Success
+    return true;
+}
+
+
 ImageContainer* fn_nonnull ImageContainer::copy() {
     // Copy contents
     auto contentsCopySize = _width * _height * _depth * _pixelFormat.getSize();

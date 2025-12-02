@@ -9,27 +9,6 @@
 #include <LCMS2C/LCMS2C.hpp>
 
 
-ImageEditor* fn_nullable ImageEditorRetain(ImageEditor* fn_nullable editor) {
-    if (editor == nullptr) {
-        return nullptr;
-    }
-    
-    editor->_referenceCounter.fetch_add(1);
-    return editor;
-}
-
-
-void ImageEditorRelease(ImageEditor* fn_nullable editor) {
-    if (editor == nullptr) {
-        return;
-    }
-    
-    if (editor->_referenceCounter.fetch_sub(1) == 1) {
-        delete editor;
-    }
-}
-
-
 ImageEditor::ImageEditor():
 _referenceCounter(1),
 _image(nullptr) {
@@ -78,6 +57,85 @@ ImageContainer* fn_nullable ImageEditor::getImageCopy() {
 }
 
 
+bool ImageEditor::getIsSRGB() const {
+    return _image ? _image->_sRGB : false;
+}
+
+void ImageEditor::setIsSRGB(bool value) {
+    if (_image) {
+        _image->_sRGB = value;
+    }
+}
+
+
+bool ImageEditor::getIsLinear() const {
+    return _image ? _image->_linear : false;
+}
+
+void ImageEditor::setIsLinear(bool value) {
+    if (_image) {
+        _image->_linear = value;
+    }
+}
+
+
+bool ImageEditor::getIsHDR() const {
+    return _image ? _image->_hdr : false;
+}
+
+void ImageEditor::setIsHDR(bool value) {
+    if (_image) {
+        _image->_hdr = value;
+    }
+}
+
+
+ImagePixel ImageEditor::getPixel(long x, long y, long z) {
+    if (_image) {
+        return _image->getPixel(x, y, z);
+    }
+    
+    return ImagePixel();
+}
+
+
+void ImageEditor::setPixel(ImagePixel pixel, long x, long y, long z) {
+    if (_image) {
+        _image->_setPixel(pixel, x, y, z);
+    }
+}
+
+
+bool ImageEditor::setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape) {
+    if (_image == nullptr) {
+        ImageToolsError::set(error, "Image is not set");
+        return false;
+    }
+    
+    if (sourceImage == nullptr) {
+        ImageToolsError::set(error, "Source image is not set");
+        return false;
+    }
+    
+    return _image->_setChannel(channelIndex, sourceImage, sourceChannelIndex, error);
+}
+
+
+bool ImageEditor::setChannel(long channelIndex, ImageEditor* fn_nonnull sourceEditor fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape) {
+    if (_image == nullptr) {
+        ImageToolsError::set(error, "Image is not set");
+        return false;
+    }
+    
+    if (sourceEditor == nullptr || sourceEditor->_image == nullptr) {
+        ImageToolsError::set(error, "Source image is not set");
+        return false;
+    }
+    
+    return _image->_setChannel(channelIndex, sourceEditor->_image, sourceChannelIndex, error);
+}
+
+
 void ImageEditor::setColorProfile(LCMSColorProfile* fn_nullable colorProfile) {
     // No image to edit
     if (_image == nullptr) {
@@ -105,3 +163,6 @@ void ImageEditor::resample(ResamplingAlgorithm algorithm, float quality, long wi
     ImageContainerRelease(_image);
     _image = resampled;
 }
+
+
+FN_IMPLEMENT_SWIFT_INTERFACE1(ImageEditor)

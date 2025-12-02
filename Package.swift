@@ -5,7 +5,7 @@ import PackageDescription
 
 
 let dependencies: [Package.Dependency] = {
-#if true
+#if false
     [
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 0)),
