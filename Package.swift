@@ -5,10 +5,10 @@ import PackageDescription
 
 
 let dependencies: [Package.Dependency] = {
-#if false
+#if true
     [
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
-        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 0)),
+        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 1)),
         .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0-rev2"),
         //.package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 3, 0)),
     ]
