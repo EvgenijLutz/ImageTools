@@ -24,14 +24,6 @@
 #include "tinyexr/tinyexr.h"
 
 
-// Unused function
-//static char* fn_nonnull copyData(const void* fn_nonnull source, long size) {
-//    auto copy = new char[size];
-//    std::memcpy(copy, source, size);
-//    return copy;
-//}
-
-
 template <typename SourceType, typename DestinationType>
 struct PixelInfo {
     union Value {
@@ -118,21 +110,21 @@ bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
 ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile):
 _referenceCounter(1),
 _pixelFormat(pixelFormat),
+_colorProfile(colorProfile),
 _sRGB(sRGB),
 _linear(linear),
 _hdr(hdr),
 _contents(contents),
 _width(width),
 _height(height),
-_depth(depth),
-_colorProfile(colorProfile) {
+_depth(depth) {
     //
 }
 
 
 ImageContainer::~ImageContainer() {
     if (_contents) {
-        delete [] _contents;
+        std::free(_contents);
     }
     
     LCMSColorProfileRelease(_colorProfile);
@@ -150,10 +142,10 @@ ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, 
 }
 
 
-ImageContainer* fn_nonnull ImageContainer::rgba8Unorm(long width, long height) {
+ImageContainer* fn_nonnull ImageContainer::createRGBA8Unorm(long width, long height) {
     auto pixelFormat = ImagePixelFormat::rgba8Unorm;
     auto contentsSize = width * height * 4;
-    auto contents = new char[contentsSize];
+    auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
     std::memset(contents, 0xFF, contentsSize);
     
     return new ImageContainer(pixelFormat, true, true, false, contents, width, height, 1, nullptr);
@@ -230,10 +222,10 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull p
     auto width = png->getWidth();
     auto height = png->getHeight();
     auto depth = 1;
-    auto contents = new char[width * height * numComponents * componentSize];
+    auto contents = reinterpret_cast<char*>(std::malloc(width * height * numComponents * componentSize));
     auto uint8Contents = reinterpret_cast<uint8_t*>(contents);
     auto uint16Contents = reinterpret_cast<__fp16*>(contents);
-    memset(contents, 0xff, width * height * numComponents * componentSize);
+    std::memset(contents, 0xff, width * height * numComponents * componentSize);
     
     auto pngContents = png->getContents();
     auto pngUint8Contents = reinterpret_cast<const uint8_t*>(pngContents);
@@ -339,14 +331,14 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
     auto container = new ImageContainer(pixelFormat, false, false, true, contents, width, height, depth, rec709);
     
     // Clean up
-    free(exrContents);
+    std::free(exrContents);
     FreeEXRHeader(&header);
     
     return container;
 }
 
 
-ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) {
+ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) {
     // Get image name
     auto imageName = _getName(path);
     
@@ -401,8 +393,8 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     
     // Copy pixel information
     auto contentsSize = width * height * numComponents * (is16Bit ? 2 : 1);
-    auto contents = new char[contentsSize];
-    memset(contents, 0xff, contentsSize);
+    auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
+    std::memset(contents, 0xff, contentsSize);
     auto ucharComponents = reinterpret_cast<unsigned char*>(contents);
     auto halfComponents = reinterpret_cast<__fp16*>(contents);
     for (auto y = 0; y < height; y++) {
@@ -439,7 +431,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path, b
     
     // Override linear setting if colourProfile is presented
     if (colorProfile) {
-        linear = colorProfile->getIsLinear();
+        linear = colorProfile->checkIsLinear();
     }
     
     printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
@@ -461,7 +453,7 @@ void ImageContainer::_assignColourProfile(LCMSColorProfile* fn_nullable colorPro
     
     // Check if colour profile is linear
     if (_colorProfile) {
-        _linear = _colorProfile->getIsLinear();
+        _linear = _colorProfile->checkIsLinear();
     }
 }
 
@@ -498,7 +490,7 @@ bool ImageContainer::_convertColourProfile(LCMSColorProfile* fn_nullable colorPr
     
     // Check if colour profile is linear
     if (_colorProfile) {
-        _linear = _colorProfile->getIsLinear();
+        _linear = _colorProfile->checkIsLinear();
     }
     
     // Clean up
@@ -509,7 +501,69 @@ bool ImageContainer::_convertColourProfile(LCMSColorProfile* fn_nullable colorPr
 }
 
 
-ImagePixel ImageContainer::getPixel(long x, long y, long z) {
+bool ImageContainer::_setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape) {
+    // Check if the number of components is correct
+    if (numComponents < 1 || numComponents > 4) {
+        ImageToolsError::set(error, "Invalid number of components");
+        return false;
+    }
+    
+    // Don't do anything if the number of components is already matches
+    if (numComponents == _pixelFormat.numComponents) {
+        return true;
+    }
+    
+    // Calculate the new size
+    auto newSize = _width * _height * _depth * numComponents * _pixelFormat.getComponentSize();
+    
+    // Modify pixel data
+    if (numComponents > _pixelFormat.numComponents) {
+        // In case of increasing the number of components - reallocate memory first
+        _contents = reinterpret_cast<char*>(std::realloc(_contents, newSize));
+        
+        // And then modify pixel data
+        for (long z = _depth - 1; z >= 0; z--) {
+            for (long y = _height - 1; y >= 0; y--) {
+                for (long x = _width - 1; x >= 0; x--) {
+                    // Get pixel data from old place
+                    auto pixel = _getPixel(x, y, z, _pixelFormat.numComponents);
+                    
+                    // Fill new channels with the fill value
+                    for (auto i = _pixelFormat.numComponents; i < numComponents; i++) {
+                        pixel.contents[i] = fill;
+                    }
+                    
+                    // Put pixel data into new space
+                    _setPixel(pixel, x, y, z, numComponents);
+                }
+            }
+        }
+    }
+    else {
+        // In case of decreasing the number of components - modify pixel data first
+        for (auto z = 0; z < _depth; z++) {
+            for (auto y = 0; y < _height; y++) {
+                for (auto x = 0; x < _width; x++) {
+                    // Get pixel data from old place
+                    auto pixel = _getPixel(x, y, z, _pixelFormat.numComponents);
+                    // Put truncated pixel data into new space
+                    _setPixel(pixel, x, y, z, numComponents);
+                }
+            }
+        }
+        
+        // And then truncate memory
+        _contents = reinterpret_cast<char*>(std::realloc(_contents, newSize));
+    }
+    
+    // Apply changes
+    _pixelFormat.numComponents = numComponents;
+    
+    return true;
+}
+
+
+ImagePixel ImageContainer::_getPixel(long x, long y, long z, long numComponents) {
     auto pixel = ImagePixel();
     
 #if 1
@@ -523,11 +577,11 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
     }
 #endif
     
-    auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
+    auto index = (z * _width * _height + y * _width + x) * numComponents;
     switch (_pixelFormat.componentType) {
         case PixelComponentType::uint8: {
             auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 pixel.contents[i] = static_cast<float>(uint8Pixel[i]) / std::numeric_limits<uint8_t>::max();
             }
             break;
@@ -535,7 +589,7 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
             
         case PixelComponentType::float16: {
             auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 pixel.contents[i] = static_cast<float>(float16Pixel[i]);
             }
             break;
@@ -543,7 +597,7 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
             
         case PixelComponentType::float32: {
             auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 pixel.contents[i] = float32Pixel[i];
             }
             break;
@@ -554,16 +608,16 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
 }
 
 
-void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
+void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z, long numComponents) {
     if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
         return;
     }
     
-    auto index = (z * _width * _height + y * _width + x) * _pixelFormat.numComponents;
+    auto index = (z * _width * _height + y * _width + x) * numComponents;
     switch (_pixelFormat.componentType) {
         case PixelComponentType::uint8: {
             auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
                 uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
             }
@@ -572,7 +626,7 @@ void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
             
         case PixelComponentType::float16: {
             auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
             }
             break;
@@ -580,12 +634,17 @@ void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
             
         case PixelComponentType::float32: {
             auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
-            for (auto i = 0; i < _pixelFormat.numComponents; i++) {
+            for (auto i = 0; i < numComponents; i++) {
                 float32Pixel[i] = pixel.contents[i];
             }
             break;
         }
     }
+}
+
+
+void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
+    _setPixel(pixel, x, y, z, _pixelFormat.numComponents);
 }
 
 
@@ -630,10 +689,15 @@ bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull s
 }
 
 
+ImagePixel ImageContainer::getPixel(long x, long y, long z) {
+    return _getPixel(x, y, z, _pixelFormat.numComponents);
+}
+
+
 ImageContainer* fn_nonnull ImageContainer::copy() {
     // Copy contents
     auto contentsCopySize = _width * _height * _depth * _pixelFormat.getSize();
-    auto contentsCopy = new char[contentsCopySize];
+    auto contentsCopy = reinterpret_cast<char*>(std::malloc(contentsCopySize));
     std::memcpy(contentsCopy, _contents, contentsCopySize);
     
     // Retain ICC profile
@@ -651,7 +715,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
     }
     auto pixelFormat = _pixelFormat;
     pixelFormat.componentType = componentType;
-    auto contents = new char[_width * _height * _depth * pixelFormat.getSize()];
+    auto contents = reinterpret_cast<char*>(std::malloc(_width * _height * _depth * pixelFormat.getSize()));
     
     
     for (auto z = 0; z < _depth; z++) {
@@ -832,7 +896,7 @@ ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm 
     bool shouldConvertColourProfile = true;
     if (_colorProfile) {
         // Check if the colour profile should be converted at all
-        if (_colorProfile->getIsLinear()) {
+        if (_colorProfile->checkIsLinear()) {
             //printf("Colour profile is already linear\n");
             shouldConvertColourProfile = false;
             linearProfile = LCMSColorProfileRetain(_colorProfile);

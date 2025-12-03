@@ -26,7 +26,7 @@ ImageEditor* fn_nonnull ImageEditor::create() {
 }
 
 
-ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_RETURNS_RETAINED {
+ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_RETURNS_RETAINED {
     auto image = ImageContainer::load(path, assumeSRGB, assumeLinear, assumedColorProfile);
     if (image == nullptr) {
         return nullptr;
@@ -42,9 +42,9 @@ ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path, bool as
 }
 
 
-void ImageEditor::edit(ImageContainer* fn_nullable image) {
+void ImageEditor::edit(ImageContainer* fn_nullable image fn_noescape) {
     ImageContainerRelease(_image);
-    _image = ImageContainerRetain(image);
+    _image = image->copy();
 }
 
 
@@ -87,6 +87,16 @@ void ImageEditor::setIsHDR(bool value) {
     if (_image) {
         _image->_hdr = value;
     }
+}
+
+
+bool ImageEditor::setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape) {
+    if (_image == nullptr) {
+        ImageToolsError::set(error, "Image is not set");
+        return false;
+    }
+    
+    return _image->_setNumComponents(numComponents, fill, error);
 }
 
 

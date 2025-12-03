@@ -106,6 +106,12 @@ private:
     std::atomic<size_t> _referenceCounter;
     
     ImagePixelFormat _pixelFormat;
+    
+    /// Color profile data.
+    ///
+    /// If `null`, then it's assumed that image has the `sRGB` colour profile.
+    LCMSColorProfile* fn_nullable _colorProfile;
+    
     /// Assumption that image's colour profile is sRGB if `_colorProfile` is not set.
     bool _sRGB;
     /// `_colorProfile`'s ``LCMSColorProfile/getIsLinear()-method`` cached property or assumption that the image has linear colour transfer function if `_colorProfile` is not set.
@@ -118,11 +124,6 @@ private:
     long _width;
     long _height;
     long _depth;
-    
-    /// Color profile data.
-    ///
-    /// If `null`, then it's assumed that image has the `sRGB` colour profile.
-    LCMSColorProfile* fn_nullable _colorProfile;
     
     
     static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path fn_noescape, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
@@ -138,15 +139,18 @@ private:
     
     void _assignColourProfile(LCMSColorProfile* fn_nullable colorProfile);
     bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
+    bool _setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape);
+    ImagePixel _getPixel(long x, long y, long z, long numComponents);
+    void _setPixel(ImagePixel pixel, long x, long y, long z, long numComponents);
     void _setPixel(ImagePixel pixel, long x, long y, long z);
-    bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr);
+    bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
     
 public:
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
     // TODO: Implement conversion from ASTCRawImage or ASTCImage
     //static ImageContainer* fn_nonnull create(ASTCRawImage* fn_nonnull decompressedImage, ImageContainer* fn_nonnull originalImage);
-    static ImageContainer* fn_nonnull rgba8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
-    static ImageContainer* fn_nullable load(const char* fn_nullable path, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_NAME(__loadUnsafe(_:_:_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nonnull createRGBA8Unorm(long width, long height) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile) SWIFT_NAME(__loadUnsafe(_:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
     bool getIsSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
@@ -166,8 +170,6 @@ public:
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
-    
-    // TODO: createSplitted(channel[]) throws -> ImageContainer
     
     /// Creates a copy of the image container with modifier component type.
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
