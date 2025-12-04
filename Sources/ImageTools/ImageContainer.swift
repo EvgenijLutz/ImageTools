@@ -16,8 +16,10 @@ fileprivate struct CallbackContext {
     var progressCallback: ImageContainerCallback
 }
 
-@_cdecl("ImageContainerCCallback")
-fileprivate func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
+// Error: duplicated symbol
+//@_cdecl("ImageContainerCCallback")
+func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
     userInfo?.withMemoryRebound(to: CallbackContext.self, capacity: 1) { pointer in
         pointer.pointee.progressCallback(progress)
     }
@@ -25,6 +27,7 @@ fileprivate func imageContainerCCallback(_ userInfo: UnsafeMutableRawPointer?, _
     return Task.isCancelled
 }
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 func withImageContainerCallback<T>(_ callback: ImageContainerCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {
     return try withoutActuallyEscaping(callback) { escapingClosure in
         var callbackContext = CallbackContext(progressCallback: escapingClosure)
@@ -35,18 +38,19 @@ func withImageContainerCallback<T>(_ callback: ImageContainerCallback, action: (
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ImageContainer {
     /// Loads an image from a path.
     ///
     /// - Parameter path: Path to load image from.
     /// - Parameter assumeSRGB: Assume the color profile to be sRGB if it could not be determined during the image loading process.
     static func load(path: String, assumeSRGB: Bool = true, assumeLinear: Bool = false, assumedColorProfile: LCMSColorProfile? = nil) throws -> sending ImageContainer {
+        var error = ImageToolsError()
         let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.__loadUnsafe(cString, assumeSRGB, assumeLinear, assumedColorProfile)
+            ImageContainer.__loadUnsafe(cString, assumeSRGB, assumeLinear, assumedColorProfile, &error)
         }
-        
         guard let image else {
-            throw ImageToolsError.other("Could not open image")
+            throw error
         }
         
         return image
@@ -61,6 +65,7 @@ public extension ImageContainer {
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ImageContainer {
     //func createResampled() {
     //

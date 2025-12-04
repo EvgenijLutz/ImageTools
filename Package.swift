@@ -8,7 +8,7 @@ let dependencies: [Package.Dependency] = {
 #if true
     [
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
-        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 2)),
+        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 3)),
         .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0-rev2"),
         //.package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 3, 0)),
     ]
@@ -27,11 +27,11 @@ let package = Package(
     // See the "Minimum Deployment Version for Reference Types Imported from C++":
     // https://www.swift.org/documentation/cxx-interop/status/
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-        .tvOS(.v17),
-        .watchOS(.v10),
-        .visionOS(.v1)
+        .macOS(.v10_13),
+        .iOS(.v12),
+        .tvOS(.v12),
+        .watchOS(.v8),
+        .visionOS(.v1),
     ],
     products: [
         .library(

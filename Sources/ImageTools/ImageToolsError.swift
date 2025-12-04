@@ -8,6 +8,7 @@
 import ImageToolsC
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 extension ImageToolsError: @retroactive Error {
     func unwrapError() -> Error {
         if _code == .taskCancelled {
@@ -24,6 +25,8 @@ extension ImageToolsError: @retroactive Error {
     }
 }
 
+
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 extension ImageToolsError: @retroactive CustomStringConvertible {
     public var description: String {
         let errorDescription = String(cString: imageToolsErrorCodeDescription(_code))

@@ -10,6 +10,7 @@ import LittleCMS
 @_exported import ImageToolsC
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension PixelComponentType {
     /// Returns size in bytes
     var size: Int {
@@ -23,6 +24,7 @@ public extension PixelComponentType {
 import CoreGraphics
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ImageContainer {
     var cgImage: CGImage  {
         get throws {
@@ -67,7 +69,7 @@ public extension ImageContainer {
                         gamma: CGColorSpace.genericRGBLinear
                     )
                     
-                    let names = issrgb ? sRGB : unknown
+                    let names = srgb ? sRGB : unknown
                     
                     if linear {
                         if hdr {
