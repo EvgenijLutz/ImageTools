@@ -24,6 +24,195 @@
 #include "tinyexr/tinyexr.h"
 
 
+// MARK: - Common functions
+
+static long _calculateMipCount(long size) {
+    auto count = 1;
+    auto currentSize = size;
+    while (currentSize > 1) {
+        count += 1;
+        currentSize /= 2;
+    }
+    return count;
+}
+
+
+static inline ImagePixel _getPixel(long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+    auto pixel = ImagePixel();
+    
+#if 1
+    // Clamp
+    x = std::clamp(x, 0l, width - 1);
+    y = std::clamp(y, 0l, height - 1);
+    z = std::clamp(z, 0l, depth - 1);
+#else
+    if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
+        return pixel;
+    }
+#endif
+    
+    auto index = (z * width * height + y * width + x) * numComponents;
+    switch (componentType) {
+        case PixelComponentType::uint8: {
+            auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                pixel.contents[i] = static_cast<float>(uint8Pixel[i]) / std::numeric_limits<uint8_t>::max();
+            }
+            break;
+        }
+            
+        case PixelComponentType::float16: {
+            auto float16Pixel = reinterpret_cast<__fp16*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                pixel.contents[i] = static_cast<float>(float16Pixel[i]);
+            }
+            break;
+        }
+            
+        case PixelComponentType::float32: {
+            auto float32Pixel = reinterpret_cast<float*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                pixel.contents[i] = float32Pixel[i];
+            }
+            break;
+        }
+    }
+    
+    return pixel;
+}
+
+
+static inline void _setPixel(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+    if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
+        return;
+    }
+    
+    auto index = (z * width * height + y * width + x) * numComponents;
+    switch (componentType) {
+        case PixelComponentType::uint8: {
+            auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
+                uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
+            }
+            break;
+        }
+            
+        case PixelComponentType::float16: {
+            auto float16Pixel = reinterpret_cast<__fp16*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
+            }
+            break;
+        }
+            
+        case PixelComponentType::float32: {
+            auto float32Pixel = reinterpret_cast<float*>(contents) + index;
+            for (auto i = 0; i < numComponents; i++) {
+                float32Pixel[i] = pixel.contents[i];
+            }
+            break;
+        }
+    }
+}
+
+
+static inline bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile, LCMSColorProfile* fn_nullable sourceColorProfile, long width, long height, char* fn_nonnull contents, ImagePixelFormat pixelFormat, bool hdr) {
+    // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
+    // TODO: For instance, struct EphemeralLCMSImage { /* ... */ };
+    // Create an image for colour conversion
+    auto cmsImage = LCMSImage::createBorrowing(contents,
+                                               width, height,
+                                               pixelFormat.numComponents, pixelFormat.getComponentSize(),
+                                               hdr,
+                                               sourceColorProfile);
+    if (cmsImage == nullptr) {
+        return false;
+    }
+    
+    // Convert colour profile
+    auto converted = cmsImage->convertColorProfile(colorProfile);
+    if (converted == false) {
+        LCMSImageRelease(cmsImage);
+        return false;
+    }
+    
+    // Clean up
+    LCMSImageRelease(cmsImage);
+    
+    // Success
+    return true;
+}
+
+
+// MARK: - Lanczos
+
+static inline float _sinc(float x) {
+    if (x == 0.0) return 1.0;
+    x *= M_PI;
+    return sin(x) / x;
+}
+
+
+static inline float _lanczos(float x, float a) {
+    if (fabs(x) >= a) return 0.0;
+    return _sinc(x) * _sinc(x / a);
+}
+
+
+static inline ImagePixel _sampleLanczosX(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+    long left = floor(x - a + 1);
+    long right = floor(x + a);
+    auto sum = ImagePixel();
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = _lanczos(x - i, a);
+        sum += ::_getPixel(i, y, z, width, height, depth, contents, numComponents, componentType) * w;
+        totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
+    return sum / totalWeight;
+}
+
+
+static inline ImagePixel _sampleLanczosY(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+    long left = floor(y - a + 1);
+    long right = floor(y + a);
+    auto sum = ImagePixel();
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = _lanczos(y - i, a);
+        sum += ::_getPixel(x, i, z, width, height, depth, contents, numComponents, componentType) * w;
+        totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
+    return sum / totalWeight;
+}
+
+
+static inline ImagePixel _sampleLanczosZ(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+    long left = floor(z - a + 1);
+    long right = floor(z + a);
+    auto sum = ImagePixel();
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = _lanczos(z - i, a);
+        sum += ::_getPixel(x, y, i, width, height, depth, contents, numComponents, componentType) * w;
+        totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
+    return sum / totalWeight;
+}
+
+
+// MARK: - PixelInfo
+
 template <typename SourceType, typename DestinationType>
 struct PixelInfo {
     union Value {
@@ -106,6 +295,8 @@ bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
     hasAlpha == other.hasAlpha;
 }
 
+
+// MARK: - ImageContainer
 
 ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile):
 _referenceCounter(1),
@@ -479,30 +670,10 @@ bool ImageContainer::_convertColourProfile(LCMSColorProfile* fn_nullable colorPr
         return true;
     }
     
-    // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
-    // TODO: For instance, struct EphemeralLCMSImage { /* ... */ };
-    // Create an image for colour conversion
-    auto cmsImage = LCMSImage::createBorrowing(_contents,
-                                               _width, _height,
-                                               _pixelFormat.numComponents, _pixelFormat.getComponentSize(),
-                                               _hdr,
-                                               _colorProfile);
-    if (cmsImage == nullptr) {
-        return false;
-    }
-    
-    // Convert colour profile
-    auto converted = cmsImage->convertColorProfile(colorProfile);
-    if (converted == false) {
-        LCMSImageRelease(cmsImage);
-        return false;
-    }
+    ::_convertColourProfile(colorProfile, _colorProfile, _width, _height, _contents, _pixelFormat, _hdr);
     
     // Apply colour profile
     _assignColourProfile(colorProfile);
-    
-    // Clean up
-    LCMSImageRelease(cmsImage);
     
     // Success
     return true;
@@ -635,87 +806,17 @@ bool ImageContainer::_setNumComponents(long numComponents, float fill, ImageTool
 
 
 ImagePixel ImageContainer::_getPixel(long x, long y, long z, long numComponents, PixelComponentType componentType) {
-    auto pixel = ImagePixel();
-    
-#if 1
-    // Clamp
-    x = std::clamp(x, 0l, _width - 1);
-    y = std::clamp(y, 0l, _height - 1);
-    z = std::clamp(z, 0l, _depth - 1);
-#else
-    if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
-        return pixel;
-    }
-#endif
-    
-    auto index = (z * _width * _height + y * _width + x) * numComponents;
-    switch (componentType) {
-        case PixelComponentType::uint8: {
-            auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                pixel.contents[i] = static_cast<float>(uint8Pixel[i]) / std::numeric_limits<uint8_t>::max();
-            }
-            break;
-        }
-            
-        case PixelComponentType::float16: {
-            auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                pixel.contents[i] = static_cast<float>(float16Pixel[i]);
-            }
-            break;
-        }
-            
-        case PixelComponentType::float32: {
-            auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                pixel.contents[i] = float32Pixel[i];
-            }
-            break;
-        }
-    }
-    
-    return pixel;
+    return ::_getPixel(x, y, z, _width, _height, _depth, _contents, numComponents, componentType);
 }
 
 
 void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z, long numComponents, PixelComponentType componentType) {
-    if ((x < 0 || x >= _width) || (y < 0 || y >= _height) || (z < 0 || z >= _depth)) {
-        return;
-    }
-    
-    auto index = (z * _width * _height + y * _width + x) * numComponents;
-    switch (componentType) {
-        case PixelComponentType::uint8: {
-            auto uint8Pixel = reinterpret_cast<uint8_t*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                auto converted = pixel.contents[i] * std::numeric_limits<uint8_t>::max();
-                uint8Pixel[i] = static_cast<uint8_t>(std::min(255.0f, converted));
-            }
-            break;
-        }
-            
-        case PixelComponentType::float16: {
-            auto float16Pixel = reinterpret_cast<__fp16*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                float16Pixel[i] = static_cast<__fp16>(pixel.contents[i]);
-            }
-            break;
-        }
-            
-        case PixelComponentType::float32: {
-            auto float32Pixel = reinterpret_cast<float*>(_contents) + index;
-            for (auto i = 0; i < numComponents; i++) {
-                float32Pixel[i] = pixel.contents[i];
-            }
-            break;
-        }
-    }
+    ::_setPixel(pixel, x, y, z, _width, _height, _depth, _contents, numComponents, componentType);
 }
 
 
 void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
-    _setPixel(pixel, x, y, z, _pixelFormat.numComponents, _pixelFormat.componentType);
+    ::_setPixel(pixel, x, y, z, _width, _height, _depth, _contents, _pixelFormat.numComponents, _pixelFormat.componentType);
 }
 
 
@@ -760,86 +861,207 @@ bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull s
 }
 
 
-inline float sinc(float x) {
-    if (x == 0.0) return 1.0;
-    x *= M_PI;
-    return sin(x) / x;
+void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    // Correct dimensions if wrong
+    width = std::max(1l, width);
+    height = std::max(1l, height);
+    depth = std::max(1l, depth);
+    
+    // Don't do anything if the target size already equals to the original size
+    if (width == _width && height == _height && depth == _depth) {
+        // Notify callback
+        if (progressCallback) {
+            progressCallback(userInfo, 1);
+        }
+        
+        // Resampling completed
+        return;
+    }
+    
+    // Prepare progress/error handler
+    struct ProgressHandler {
+        void* fn_nullable userInfo;
+        ImageToolsProgressCallback fn_nullable progressCallback;
+        
+        long numSteps;
+        long currentStep;
+        long stepDistance;
+        
+        void notifyProgress() {
+            // Don't do anything if
+            if (progressCallback == nullptr) {
+                return;
+            }
+            
+            currentStep = std::min(currentStep + 1, numSteps);
+            
+            // Continue task
+            if (currentStep % stepDistance != 0) {
+                return;
+            }
+            
+            // Notify about process milestone
+            auto progress = 1.0f / static_cast<float>(numSteps) * static_cast<float>(currentStep);
+            progressCallback(userInfo, progress);
+        }
+    };
+    auto phase1Steps = _height * _depth;
+    auto phase2Steps = height * _depth;
+    auto phase3Steps = depth > 1 ? (height * depth) : (0);
+    auto totalSteps = phase1Steps + phase2Steps + phase3Steps;
+    auto progressHandler = ProgressHandler {
+        .userInfo = userInfo,
+        .progressCallback = progressCallback,
+        .numSteps = totalSteps,
+        .currentStep = 0,
+        .stepDistance = totalSteps / 10
+    };
+        
+    // Convert pixels to linear colour profile
+    LCMSColorProfile* linearProfile = nullptr;
+    if (_colorProfile) {
+        // Check if the colour profile should be converted at all
+        if (_colorProfile->checkIsLinear()) {
+            //printf("Colour profile is already linear\n");
+        }
+        else {
+            linearProfile = _colorProfile->createLinear();
+            if (linearProfile == nullptr) {
+                // This should never happen
+                printf("Could not create linear colour profile\n");
+            }
+        }
+    }
+    else if (_sRGB) {
+        // Check if the colour profile should be converted at all
+        if (_linear) {
+            //printf("Colour profile is already linear\n");
+        }
+        else {
+            auto sRGBProfile = LCMSColorProfile::createSRGB();
+            linearProfile = sRGBProfile->createLinear();
+            if (linearProfile == nullptr) {
+                // This should never happen
+                printf("Could not create linear colour profile\n");
+            }
+            LCMSColorProfileRelease(sRGBProfile);
+        }
+    }
+    
+    // Create source image with linear color profile
+    if (linearProfile != nullptr) {
+        //printf("Convert colour profile to linear\n");
+        _convertColourProfile(linearProfile);
+    }
+    
+    // Calculate intermediate memory
+    auto sourceSize = _width * _height * _depth * _pixelFormat.getSize();
+    auto targetSize = width * height * depth * _pixelFormat.getSize();
+    auto intermediateSize = width * _height * _depth * _pixelFormat.getSize();
+    auto temporarySize = std::max(intermediateSize, targetSize);
+    auto currentSize = sourceSize;
+    
+    // Expand buffer size if needed
+    if (temporarySize > sourceSize) {
+        currentSize = temporarySize;
+        _contents = reinterpret_cast<char*>(std::realloc(_contents, temporarySize));
+    }
+    
+    // Intermediate buffer
+    auto tmpBuffer = reinterpret_cast<char*>(std::malloc(intermediateSize));
+    
+    // Source and destination contents for resampling passes
+    auto sourceContents = _contents;
+    auto destinationContents = tmpBuffer;
+    
+    // Prepare some often used variables for resampling passes
+    auto numComponents = _pixelFormat.numComponents;
+    auto componentType = _pixelFormat.componentType;
+    auto scale = PixelPosition(static_cast<float>(_width) / width,
+                               static_cast<float>(_height) / height,
+                               static_cast<float>(_depth) / depth);
+    
+    // Horizontal pass
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < _height; y++) {
+            for (auto x = 0; x < width; x++) {
+                float srcX = (x + 0.5) * scale.x - 0.5;
+                auto pixel = ::_sampleLanczosX(srcX, y, z, quality, _width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
+                ::_setPixel(pixel, x, y, z, width, _height, _depth, destinationContents, numComponents, componentType);
+            }
+            
+            // Check cancellation
+            progressHandler.notifyProgress();
+        }
+    }
+    // Prepare source and destination contents for further processing
+    std::swap(sourceContents, destinationContents);
+    
+    // Vertical pass
+    for (auto z = 0; z < _depth; z++) {
+        for (auto y = 0; y < height; y++) {
+            for (auto x = 0; x < width; x++) {
+                float srcY = (y + 0.5) * scale.y - 0.5;
+                auto pixel = ::_sampleLanczosY(x, srcY, z, quality, width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
+                ::_setPixel(pixel, x, y, z, width, height, _depth, destinationContents, numComponents, componentType);
+            }
+            
+            // Check cancellation
+            progressHandler.notifyProgress();
+        }
+    }
+    // Prepare source and destination contents for further processing
+    std::swap(sourceContents, destinationContents);
+    
+    // Depth pass if needed
+    if (depth > 1) {
+        for (auto z = 0; z < depth; z++) {
+            for (auto y = 0; y < height; y++) {
+                for (auto x = 0; x < width; x++) {
+                    float srcZ = (z + 0.5) * scale.z - 0.5;
+                    auto pixel = ::_sampleLanczosZ(x, y, srcZ, quality, width, height, _depth, sourceContents, numComponents, componentType, renormalize);
+                    ::_setPixel(pixel, x, y, z, width, height, depth, destinationContents, numComponents, componentType);
+                }
+                
+                // Check cancellation
+                progressHandler.notifyProgress();
+            }
+        }
+        // Prepare source and destination contents for further processing
+        std::swap(sourceContents, destinationContents);
+    }
+    
+    // Copy temporary buffer to original if needed
+    if (_contents != sourceContents) {
+        std::memcpy(_contents, sourceContents, targetSize);
+    }
+    
+    // Apply size
+    _width = width;
+    _height = height;
+    _depth = depth;
+    
+    // Reduce buffer size if needed
+    if (targetSize < currentSize) {
+        _contents = reinterpret_cast<char*>(std::realloc(_contents, targetSize));
+    }
+    
+    // Convert back colour profile if needed
+    if (linearProfile != nullptr) {
+        //printf("Convert colour profile back to non-linear\n");
+        // TODO: Report progress
+        _convertColourProfile(_colorProfile);
+    }
+    
+    // Clean up
+    std::free(tmpBuffer);
+    LCMSColorProfileRelease(linearProfile);
+    
+    // Notify callback
+    if (progressCallback) {
+        progressCallback(userInfo, 1);
+    }
 }
-
-
-inline float lanczos(float x, float a) {
-    if (fabs(x) >= a) return 0.0;
-    return sinc(x) * sinc(x / a);
-}
-
-
-ImagePixel sampleLanczosX(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
-    long left = floor(x - a + 1);
-    long right = floor(x + a);
-    auto sum = ImagePixel();
-    float totalWeight = 0.0;
-    for (auto i = left; i <= right; ++i) {
-        float w = lanczos(x - i, a);
-        sum += img->getPixel(i, y, z) * w;
-        totalWeight += w;
-    }
-    if (renormalize) {
-        return (sum / totalWeight).normalized();
-    }
-    return sum / totalWeight;
-}
-
-
-ImagePixel sampleLanczosY(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
-    long left = floor(y - a + 1);
-    long right = floor(y + a);
-    auto sum = ImagePixel();
-    float totalWeight = 0.0;
-    for (auto i = left; i <= right; ++i) {
-        float w = lanczos(y - i, a);
-        sum += img->getPixel(x, i, z) * w;
-        totalWeight += w;
-    }
-    if (renormalize) {
-        return (sum / totalWeight).normalized();
-    }
-    return sum / totalWeight;
-}
-
-
-ImagePixel sampleLanczosZ(ImageContainer* fn_nonnull img, float x, float y, float z, float a, bool renormalize) {
-    long left = floor(z - a + 1);
-    long right = floor(z + a);
-    auto sum = ImagePixel();
-    float totalWeight = 0.0;
-    for (auto i = left; i <= right; ++i) {
-        float w = lanczos(z - i, a);
-        sum += img->getPixel(x, y, i) * w;
-        totalWeight += w;
-    }
-    if (renormalize) {
-        return (sum / totalWeight).normalized();
-    }
-    return sum / totalWeight;
-}
-
-
-static long _calculateMipCount(long size) {
-    auto count = 1;
-    auto currentSize = size;
-    while (currentSize > 1) {
-        count += 1;
-        currentSize /= 2;
-    }
-    return count;
-}
-
-
-//bool ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, ImageContainer* fn_nullable source fn_noescape, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
-//    //
-//    
-//    return true;
-//}
 
 
 ImagePixel ImageContainer::getPixel(long x, long y, long z) {
@@ -891,207 +1113,9 @@ long ImageContainer::calculateMipLevelCount() {
 
 
 ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
-    // Correct dimensions if wrong
-    width = std::max(1l, width);
-    height = std::max(1l, height);
-    depth = std::max(1l, depth);
-    
-    // Prepare progress/error handler
-    struct ProgressHandler {
-        ImageToolsError* fn_nullable error;
-        void* fn_nullable userInfo;
-        ImageToolsProgressCallback fn_nullable progressCallback;
-        
-        long numSteps;
-        long currentStep;
-        long stepDistance;
-        
-        bool checkCancellation() {
-            // Don't do anything if
-            if (progressCallback == nullptr) {
-                return false;
-            }
-            
-            currentStep = std::min(currentStep + 1, numSteps);
-            
-            // Continue task
-            if (currentStep % stepDistance != 0) {
-                return false;
-            }
-            
-            // Notify about process milestone
-            auto progress = 1.0f / static_cast<float>(numSteps) * static_cast<float>(currentStep);
-            auto cancelled = progressCallback(userInfo, progress);
-            if (cancelled && error) {
-                error->set(ImageToolsErrorCode::taskCancelled);
-            }
-            return cancelled;
-        }
-    };
-    auto phase1Steps = _height * _depth;
-    auto phase2Steps = height * _depth;
-    auto phase3Steps = depth > 1 ? (height * depth) : (0);
-    auto totalSteps = phase1Steps + phase2Steps + phase3Steps;
-    auto progressHandler = ProgressHandler {
-        .error = error,
-        .userInfo = userInfo,
-        .progressCallback = progressCallback,
-        .numSteps = totalSteps,
-        .currentStep = 0,
-        .stepDistance = totalSteps / 10
-    };
-        
-    // Create linear color space
-    LCMSColorProfile* linearProfile = nullptr;
-    bool shouldConvertColourProfile = true;
-    if (_colorProfile) {
-        // Check if the colour profile should be converted at all
-        if (_colorProfile->checkIsLinear()) {
-            //printf("Colour profile is already linear\n");
-            shouldConvertColourProfile = false;
-            linearProfile = LCMSColorProfileRetain(_colorProfile);
-        }
-        else {
-            linearProfile = _colorProfile->createLinear();
-            if (linearProfile == nullptr) {
-                // This should never happen
-                printf("Could not convert to linear colour profile\n");
-                linearProfile = LCMSColorProfileRetain(_colorProfile);
-            }
-        }
-    }
-    else if (_sRGB) {
-        // Check if the colour profile should be converted at all
-        if (_linear) {
-            //printf("Colour profile is already linear\n");
-            shouldConvertColourProfile = false;
-        }
-        else {
-            auto sRGBProfile = LCMSColorProfile::createSRGB();
-            linearProfile = sRGBProfile->createLinear();
-            if (linearProfile == nullptr) {
-                // This should never happen
-                printf("Could not convert to linear colour profile\n");
-                linearProfile = LCMSColorProfileRetain(sRGBProfile);
-            }
-            LCMSColorProfileRelease(sRGBProfile);
-        }
-    }
-    if (linearProfile == nullptr) {
-        shouldConvertColourProfile = false;
-    }
-    
-    // Create source image with linear color profile
-    ImageContainer* source;
-    if (shouldConvertColourProfile) {
-        //printf("Convert colour profile to linear\n");
-        source = copy();
-        // TODO: Report progress
-        shouldConvertColourProfile = source->_convertColourProfile(linearProfile);
-    }
-    else {
-        source = ImageContainerRetain(this);
-    }
-    
-    // Intermediate images for a separable filter
-    auto tmp1 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, _height, _depth, linearProfile);
-    auto tmp2 = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, _depth, linearProfile);
-    
-    // Target image
-    ImageContainer* target = nullptr;
-    if (depth > 1) {
-        target = ImageContainer::create(_pixelFormat, _sRGB, _linear, _hdr, width, height, depth, linearProfile);
-    }
-    else {
-        // Don't need to allocate extra image, since dimensions of tmp2 and target image are the same
-        // We often work with 2D images, this shortcut saves us a bif of computation time and memory
-        target = ImageContainerRetain(tmp2);
-    }
-    
-    auto scale = PixelPosition(static_cast<float>(_width) / width,
-                               static_cast<float>(_height) / height,
-                               static_cast<float>(_depth) / depth);
-    
-    // Horizontal pass
-    for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < _height; y++) {
-            for (auto x = 0; x < width; x++) {
-                float srcX = (x + 0.5) * scale.x - 0.5;
-                auto pixel = sampleLanczosX(source, srcX, y, z, quality, renormalize);
-                tmp1->_setPixel(pixel, x, y, z);
-            }
-            
-            // Check cancellation
-            if (progressHandler.checkCancellation()) {
-                ImageContainerRelease(tmp2);
-                ImageContainerRelease(tmp1);
-                ImageContainerRelease(source);
-                LCMSColorProfileRelease(linearProfile);
-                return nullptr;
-            }
-        }
-    }
-    
-    // Vertical pass
-    for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < height; y++) {
-            for (auto x = 0; x < width; x++) {
-                float srcY = (y + 0.5) * scale.y - 0.5;
-                auto pixel = sampleLanczosY(tmp1, x, srcY, z, quality, renormalize);
-                tmp2->_setPixel(pixel, x, y, z);
-            }
-            
-            // Check cancellation
-            if (progressHandler.checkCancellation()) {
-                ImageContainerRelease(tmp2);
-                ImageContainerRelease(tmp1);
-                ImageContainerRelease(source);
-                LCMSColorProfileRelease(linearProfile);
-                return nullptr;
-            }
-        }
-    }
-    
-    // Depth pass if needed
-    if (depth > 1) {
-        for (auto z = 0; z < depth; z++) {
-            for (auto y = 0; y < height; y++) {
-                for (auto x = 0; x < width; x++) {
-                    float srcZ = (z + 0.5) * scale.z - 0.5;
-                    auto pixel = sampleLanczosZ(tmp2, x, y, srcZ, quality, renormalize);
-                    target->_setPixel(pixel, x, y, z);
-                }
-                
-                // Check cancellation
-                if (progressHandler.checkCancellation()) {
-                    ImageContainerRelease(tmp2);
-                    ImageContainerRelease(tmp1);
-                    ImageContainerRelease(source);
-                    LCMSColorProfileRelease(linearProfile);
-                    return nullptr;
-                }
-            }
-        }
-    }
-    
-    // Convert back colour profile if needed
-    if (shouldConvertColourProfile) {
-        //printf("Convert colour profile back to non-linear\n");
-        // TODO: Report progress
-        target->_convertColourProfile(_colorProfile);
-    }
-    
-    ImageContainerRelease(tmp2);
-    ImageContainerRelease(tmp1);
-    ImageContainerRelease(source);
-    LCMSColorProfileRelease(linearProfile);
-    
-    // Notify callback
-    if (progressCallback) {
-        progressCallback(userInfo, 1);
-    }
-    // Resampling completed
-    return target;
+    auto imageCopy = copy();
+    imageCopy->_resample(algorithm, quality, width, height, depth, renormalize, userInfo, progressCallback);
+    return imageCopy;
 }
 
 

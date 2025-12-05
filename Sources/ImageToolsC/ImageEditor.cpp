@@ -168,22 +168,13 @@ long ImageEditor::calculateMipLevelCount() {
 }
 
 
-void ImageEditor::resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth) {
-    auto resampled = _image->createResampled(algorithm, quality, width, height, depth);
-    ImageContainerRelease(_image);
-    _image = resampled;
+void ImageEditor::resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    _image->_resample(algorithm, quality, width, height, depth, renormalize, userInfo, progressCallback);
 }
 
 
-bool ImageEditor::downsample(ResamplingAlgorithm algorithm, float quality, bool renormalize, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
-    auto downsampled = _image->createDownsampled(algorithm, quality, renormalize, error, userInfo, progressCallback);
-    if (downsampled == nullptr) {
-        return false;
-    }
-    
-    ImageContainerRelease(_image);
-    _image = downsampled;
-    return true;
+void ImageEditor::downsample(ResamplingAlgorithm algorithm, float quality, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    _image->_resample(algorithm, quality, _image->_width / 2, _image->_height / 2, _image->_depth / 2, renormalize, userInfo, progressCallback);
 }
 
 

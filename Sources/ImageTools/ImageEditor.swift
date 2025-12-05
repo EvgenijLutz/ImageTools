@@ -50,16 +50,23 @@ public extension ImageEditor {
     }
     
     
+    func resample(_ algorithm: ResamplingAlgorithm, quality: Float,
+                  width: Int, height: Int, depth: Int,
+                  renormalize: Bool,
+                  _ progressCallback: ImageContainerCallback = { _ in }
+    ) throws {
+        return withImageContainerCallback(progressCallback) { userInfo in
+            __resampleUnsafe(algorithm, quality: quality, width: width, height: height, depth: depth, renormalize: renormalize, userInfo: userInfo, progressCallback: imageContainerCCallback)
+        }
+    }
+    
+    
     func downsample(_ algorithm: ResamplingAlgorithm, quality: Float,
                            renormalize: Bool,
                            _ progressCallback: ImageContainerCallback = { _ in }
     ) throws {
-        return try withImageContainerCallback(progressCallback) { userInfo in
-            var error = ImageToolsError()
-            let succeeded = __downsampleUnsafe(algorithm, quality: quality, renormalize: renormalize, error: &error, userInfo: userInfo, progressCallback: imageContainerCCallback)
-            guard succeeded else {
-                throw error.unwrapError()
-            }
+        return withImageContainerCallback(progressCallback) { userInfo in
+            __downsampleUnsafe(algorithm, quality: quality, renormalize: renormalize, userInfo: userInfo, progressCallback: imageContainerCCallback)
         }
     }
     

@@ -107,14 +107,14 @@ private:
     
     ImagePixelFormat _pixelFormat;
     
-    /// Color profile data.
+    /// Colour profile.
     ///
-    /// If `null`, then it's assumed that image has the `sRGB` colour profile.
+    /// If `null`, then it's assumed that image pixel colours are not bound to a specific colour profile. Useful for non-colour images like normal maps.
     LCMSColorProfile* fn_nullable _colorProfile;
     
     /// Assumption that image's colour profile is sRGB if `_colorProfile` is not set.
     bool _sRGB;
-    /// `_colorProfile`'s ``LCMSColorProfile/getIsLinear()-method`` cached property or assumption that the image has linear colour transfer function if `_colorProfile` is not set.
+    /// `_colorProfile`'s ``LCMSColorProfile/getLinear()-method`` cached property or assumption that the image has linear colour transfer function if `_colorProfile` is not set.
     bool _linear;
     /// Assumption that colours extend
     bool _hdr;
@@ -139,13 +139,15 @@ private:
     
     void _assignColourProfile(LCMSColorProfile* fn_nullable colorProfile);
     bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
+    // TODO: Get rid of source, it doesn't worth it to make things so complex
     void _setComponentType(PixelComponentType componentType, ImageContainer* fn_nullable source fn_noescape);
     bool _setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape);
     ImagePixel _getPixel(long x, long y, long z, long numComponents, PixelComponentType componentType);
     void _setPixel(ImagePixel pixel, long x, long y, long z, long numComponents, PixelComponentType componentType);
     void _setPixel(ImagePixel pixel, long x, long y, long z);
     bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
-    //bool _resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, ImageContainer* fn_nullable source fn_noescape, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
+    
+    void _resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
     
 public:
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
@@ -155,6 +157,7 @@ public:
     static ImageContainer* fn_nullable load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(_:_:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
+    LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     bool getSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
@@ -165,7 +168,6 @@ public:
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
     long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
     
-    LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     
     ImagePixel getPixel(long x, long y, long z = 0);
     
