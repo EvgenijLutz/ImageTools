@@ -126,6 +126,7 @@ private:
     long _depth;
     
     
+    static ImageContainer* fn_nullable _tryLoadJPEG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadOpenEXR(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     

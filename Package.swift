@@ -7,6 +7,7 @@ import PackageDescription
 let dependencies: [Package.Dependency] = {
 #if true
     [
+        .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.1.3"),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 3)),
         .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0-rev2"),
@@ -14,6 +15,7 @@ let dependencies: [Package.Dependency] = {
     ]
 #else
     [
+        .package(name: "JPEGTurbo", path: "../JPEGTurbo"),
         .package(name: "LibPNG", path: "../LibPNG"),
         .package(name: "LittleCMS", path: "../LittleCMS"),
         .package(name: "ASTCEncoder", path: "../ASTCEncoder"),
@@ -48,6 +50,7 @@ let package = Package(
         .target(
             name: "ImageToolsC",
             dependencies: [
+                .product(name: "JPEGTurboC", package: "JPEGTurbo"),
                 .product(name: "LibPNGC", package: "LibPNG"),
                 .product(name: "LCMS2C", package: "LittleCMS"),
                 .product(name: "ASTCEncoderC", package: "ASTCEncoder")
@@ -59,6 +62,7 @@ let package = Package(
         .target(
             name: "ImageTools",
             dependencies: [
+                .product(name: "JPEGTurbo", package: "JPEGTurbo"),
                 .product(name: "LibPNG", package: "LibPNG"),
                 .product(name: "LittleCMS", package: "LittleCMS"),
                 .product(name: "ASTCEncoder", package: "ASTCEncoder"),

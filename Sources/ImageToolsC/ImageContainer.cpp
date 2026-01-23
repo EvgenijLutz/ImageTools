@@ -6,6 +6,7 @@
 //
 
 #include <ImageToolsC/ImageContainer.hpp>
+#include <JPEGTurboC/JPEGTurboC.hpp>
 #include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
 
@@ -359,6 +360,23 @@ static const char* fn_nonnull _getName(const char* fn_nonnull path) {
 }
 
 
+ImageContainer* fn_nullable ImageContainer::_tryLoadJPEG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
+    auto isJPEG = checkIfJPEG(path);
+    if (isJPEG == false) {
+        return nullptr;
+    }
+    
+    auto jpeg = JPEGImage::load(path);
+    if (jpeg == nullptr) {
+        return nullptr;
+    }
+    
+    // Extract jpeg image contents
+    
+    return nullptr;
+}
+
+
 ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
     auto isPng = PNGImage::checkIfPNG(path);
     if (isPng == false) {
@@ -551,6 +569,15 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
 ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile, ImageToolsError* fn_nullable error fn_noescape) {
     // Get image name
     auto imageName = _getName(path);
+    
+    // Try to load as a JPEG image
+    {
+        auto jpeg = _tryLoadJPEG(path);
+        if (jpeg) {
+            printf("Image \"%s\" is loaded using JPEGTurbo - %ld bytes per component\n", imageName, jpeg->_pixelFormat.getComponentSize());
+            return jpeg;
+        }
+    }
     
     // Try to load as a PNG image
     {
