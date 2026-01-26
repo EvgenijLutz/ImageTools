@@ -178,4 +178,13 @@ void ImageEditor::downsample(ResamplingAlgorithm algorithm, float quality, bool 
 }
 
 
+void ImageEditor::sRGBToLinear(bool preserveAlpha) {
+    _image->_sRGBToLinear(preserveAlpha);
+}
+
+void ImageEditor::linearToSRGB(bool preserveAlpha) {
+    _image->_linearToSRGB(preserveAlpha);
+}
+
+
 FN_IMPLEMENT_SWIFT_INTERFACE1(ImageEditor)

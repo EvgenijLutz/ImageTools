@@ -100,7 +100,12 @@ struct ImagePixel {
     }
     
     ImagePixel normalized() const {
-        return *this / length();
+        auto len = length();
+        auto pixel = *this;
+        pixel.r /= len;
+        pixel.g /= len;
+        pixel.b /= len;
+        return pixel;
     }
     
     ImagePixel operator + (const ImagePixel& other) const {

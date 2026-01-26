@@ -7,6 +7,7 @@ import PackageDescription
 let dependencies: [Package.Dependency] = {
 #if true
     [
+        .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: "3.1.3"),
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.1.3"),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 3)),
@@ -15,6 +16,7 @@ let dependencies: [Package.Dependency] = {
     ]
 #else
     [
+        .package(name: "FastTGA", path: "../FastTGA"),
         .package(name: "JPEGTurbo", path: "../JPEGTurbo"),
         .package(name: "LibPNG", path: "../LibPNG"),
         .package(name: "LittleCMS", path: "../LittleCMS"),
@@ -50,6 +52,7 @@ let package = Package(
         .target(
             name: "ImageToolsC",
             dependencies: [
+                .product(name: "FastTGAC", package: "FastTGA"),
                 .product(name: "JPEGTurboC", package: "JPEGTurbo"),
                 .product(name: "LibPNGC", package: "LibPNG"),
                 .product(name: "LCMS2C", package: "LittleCMS"),
@@ -62,6 +65,7 @@ let package = Package(
         .target(
             name: "ImageTools",
             dependencies: [
+                .product(name: "FastTGA", package: "FastTGA"),
                 .product(name: "JPEGTurbo", package: "JPEGTurbo"),
                 .product(name: "LibPNG", package: "LibPNG"),
                 .product(name: "LittleCMS", package: "LittleCMS"),

@@ -49,6 +49,9 @@ enum class PixelComponentType: long {
     /// Unsigned 8-bit integer.
     uint8 = 0,
     
+    //uint16 = 1,
+    //uint32 = 2,
+    
     /// Half-precision floating point value.
     float16 = 1,
     
@@ -126,6 +129,7 @@ private:
     long _depth;
     
     
+    static ImageContainer* fn_nullable _tryLoadTGA(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadJPEG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadPNG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadOpenEXR(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED;
@@ -149,6 +153,9 @@ private:
     bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
     
     void _resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
+    
+    void _sRGBToLinear(bool preserveAlpha);
+    void _linearToSRGB(bool preserveAlpha);
     
 public:
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
@@ -183,6 +190,9 @@ public:
     long calculateMipLevelCount();
     ImageContainer* fn_nullable createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createResampledUnsafe(_:quality:width:height:depth:renormalize:error:userInfo:progressCallback:));
     ImageContainer* fn_nullable createDownsampled(ResamplingAlgorithm algorithm, float quality, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createDownsampledUnsafe(_:quality:renormalize:error:userInfo:progressCallback:));
+    
+    ImageContainer* fn_nonnull createSRGBToLinearConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createLinearToSRGBConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED;
     
     //void generateCubeMap();
     

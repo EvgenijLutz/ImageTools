@@ -68,6 +68,9 @@ public:
     
     void resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize = false, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__resampleUnsafe(_:quality:width:height:depth:renormalize:userInfo:progressCallback:));
     void downsample(ResamplingAlgorithm algorithm, float quality, bool renormalize = false, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__downsampleUnsafe(_:quality:renormalize:userInfo:progressCallback:));
+    
+    void sRGBToLinear(bool preserveAlpha);
+    void linearToSRGB(bool preserveAlpha);
 } FN_SWIFT_INTERFACE(ImageEditor);
 
 

@@ -62,8 +62,8 @@ public extension ImageEditor {
     
     
     func downsample(_ algorithm: ResamplingAlgorithm, quality: Float,
-                           renormalize: Bool,
-                           _ progressCallback: ImageContainerCallback = { _ in }
+                    renormalize: Bool,
+                    _ progressCallback: ImageContainerCallback = { _ in }
     ) throws {
         return withImageContainerCallback(progressCallback) { userInfo in
             __downsampleUnsafe(algorithm, quality: quality, renormalize: renormalize, userInfo: userInfo, progressCallback: imageContainerCCallback)
