@@ -22,7 +22,7 @@ ImageEditor::~ImageEditor() {
 
 
 ImageEditor* fn_nonnull ImageEditor::create(ImageContainer* fn_nonnull image) {
-    return new ImageEditor(ImageContainerRetain(image));
+    return new ImageEditor(image->copy());
 }
 
 

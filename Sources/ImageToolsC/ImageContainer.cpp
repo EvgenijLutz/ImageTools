@@ -10,6 +10,8 @@
 #include <JPEGTurboC/JPEGTurboC.hpp>
 #include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
+#include "UInt8SRGBTable.hpp"
+#include <assert.h>
 
 #if defined(__APPLE__)
 #define IS_APPLE 1
@@ -302,6 +304,47 @@ bool ImagePixelFormat::operator == (const ImagePixelFormat& other) const {
     return numComponents == other.numComponents &&
     componentType == other.componentType &&
     hasAlpha == other.hasAlpha;
+}
+
+
+// MARK: - ImageContainerCollection
+
+ImageContainerCollection::ImageContainerCollection():
+_numImages(0) { }
+
+ImageContainerCollection::ImageContainerCollection(const ImageContainerCollection& other):
+_numImages(other._numImages) {
+    for (auto i = 0; i < _numImages; i++) {
+        _images[i] = ImageContainerRetain(other._images[i]);
+    }
+}
+
+ImageContainerCollection::ImageContainerCollection(ImageContainerCollection&& other):
+_numImages(std::exchange(other._numImages, 0)) {
+    for (auto i = 0; i < _numImages; i++) {
+        _images[i] = other._images[i];
+    }
+}
+
+ImageContainerCollection::~ImageContainerCollection() {
+    for (auto i = 0; i < _numImages; i++) {
+        ImageContainerRelease(_images[i]);
+    }
+}
+
+void ImageContainerCollection::add(ImageContainer* fn_nonnull image) {
+    assert((_numImages < IMAGE_CONTAINER_COLLECTION_MAX_IMAGES) && "Exceeded maximum number of images");
+    _images[_numImages] = ImageContainerRetain(image);
+    _numImages += 1;
+}
+
+long ImageContainerCollection::getNumImages() const SWIFT_COMPUTED_PROPERTY {
+    return _numImages;
+}
+
+ImageContainer* fn_nonnull ImageContainerCollection::get(long index) const SWIFT_RETURNS_UNRETAINED {
+    assert((index < _numImages) && "Index out of bounds");
+    return _images[index];
 }
 
 
@@ -615,6 +658,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
         auto tga = _tryLoadTGA(path);
         if (tga) {
             //tga->_sRGBToLinear(true);
+            //tga->_linearToSRGB(true);
             printf("Image \"%s\" is loaded using FastTGA - %ld bytes per component\n", imageName, tga->_pixelFormat.getComponentSize());
             return tga;
         }
@@ -1141,21 +1185,9 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
 }
 
 
-float fromLinearToSRGB(float linear) {
-    if (linear < 0.0031308) {
-        return linear * 12.92;
-    }
-    
-    return pow(linear, 1.0/2.4) * 1.055 - 0.055;
-}
-
-
-float fromSRGBToLinear(float sRGB) {
-    if (sRGB <= 0.04045) {
-        return sRGB / 12.92;
-    }
-    
-    return pow((sRGB + 0.055) / 1.055, 2.4);
+template<typename ContextType>
+void distribute_computation(ContextType context, long start, long end, void (* callback)(ContextType context, long index)) {
+    //
 }
 
 
@@ -1164,58 +1196,18 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
     _sRGB = false;
     _linear = true;
     
+    auto numPixels = _width * _height * _depth;
+    auto totalComponents = _width * _height * _depth * _pixelFormat.numComponents;
+    
     if (_pixelFormat.componentType == PixelComponentType::uint8) {
         uint8_t* uintData = reinterpret_cast<uint8_t*>(_contents);
-        auto numPixels = _width * _height * _depth;
         
-        if (_pixelFormat.numComponents == 1) {
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
             for (auto index = 0; index < numPixels; index++) {
-                auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
-                
-                r = fromSRGBToLinear(r);
-                
-                uintData[0] = static_cast<uint8_t>(std::min(255.0f, r * std::numeric_limits<uint8_t>::max()));
-                
-                uintData += 1;
-            }
-            
-            return;
-        }
-        
-        if (_pixelFormat.numComponents == 2) {
-            for (auto index = 0; index < numPixels; index++) {
-                auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
-                auto g = static_cast<float>(uintData[1]) / std::numeric_limits<uint8_t>::max();
-                
-                r = fromSRGBToLinear(r);
-                g = fromSRGBToLinear(g);
-                
-                uintData[0] = static_cast<uint8_t>(std::min(255.0f, r * std::numeric_limits<uint8_t>::max()));
-                uintData[1] = static_cast<uint8_t>(std::min(255.0f, g * std::numeric_limits<uint8_t>::max()));
-                
-                uintData += 2;
-            }
-            
-            return;
-        }
-        
-        if (_pixelFormat.numComponents == 3) {
-            for (auto index = 0; index < numPixels; index++) {
-#if 0 // IS_APPLE
-                // It's slower D:
-                auto vec = simd_make_float3(static_cast<float>(uintData[0]),
-                                            static_cast<float>(uintData[1]),
-                                            static_cast<float>(uintData[2])) / std::numeric_limits<uint8_t>::max();
-                vec.x = fromSRGBToLinear(vec.x);
-                vec.y = fromSRGBToLinear(vec.y);
-                vec.z = fromSRGBToLinear(vec.z);
-                
-                vec = simd_min(vec * std::numeric_limits<uint8_t>::max(),
-                               simd_make_float3(256, 256, 256));
-                
-                uintData[0] = static_cast<uint8_t>(vec.x);
-                uintData[1] = static_cast<uint8_t>(vec.y);
-                uintData[2] = static_cast<uint8_t>(vec.z);
+#if USE_UINT8_TABLE
+                uintData[0] = uint8Table[uintData[0]].linear;
+                uintData[1] = uint8Table[uintData[1]].linear;
+                uintData[2] = uint8Table[uintData[2]].linear;
 #else
                 auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
                 auto g = static_cast<float>(uintData[1]) / std::numeric_limits<uint8_t>::max();
@@ -1230,57 +1222,71 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
                 uintData[2] = static_cast<uint8_t>(std::min(255.0f, b * std::numeric_limits<uint8_t>::max()));
 #endif
                 
-                uintData += 3;
+                uintData += 4;
             }
-            
-            return;
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+#if USE_UINT8_TABLE
+                *uintData = uint8Table[*uintData].linear;
+#else
+                auto c = static_cast<float>(*uintData) / std::numeric_limits<uint8_t>::max();
+                c = fromSRGBToLinear(c);
+                *uintData = static_cast<uint8_t>(std::min(255.0f, c * std::numeric_limits<uint8_t>::max()));
+#endif
+                uintData += 1;
+            }
         }
         
-        if (_pixelFormat.numComponents == 4) {
-            if (preserveAlpha) {
-                for (auto index = 0; index < numPixels; index++) {
-                    auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
-                    auto g = static_cast<float>(uintData[1]) / std::numeric_limits<uint8_t>::max();
-                    auto b = static_cast<float>(uintData[2]) / std::numeric_limits<uint8_t>::max();
-                    
-                    r = fromSRGBToLinear(r);
-                    g = fromSRGBToLinear(g);
-                    b = fromSRGBToLinear(b);
-                    
-                    uintData[0] = static_cast<uint8_t>(std::min(255.0f, r * std::numeric_limits<uint8_t>::max()));
-                    uintData[1] = static_cast<uint8_t>(std::min(255.0f, g * std::numeric_limits<uint8_t>::max()));
-                    uintData[2] = static_cast<uint8_t>(std::min(255.0f, b * std::numeric_limits<uint8_t>::max()));
-                    
-                    uintData += 4;
-                }
-            }
-            else {
-                for (auto index = 0; index < numPixels; index++) {
-                    auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
-                    auto g = static_cast<float>(uintData[1]) / std::numeric_limits<uint8_t>::max();
-                    auto b = static_cast<float>(uintData[2]) / std::numeric_limits<uint8_t>::max();
-                    auto a = static_cast<float>(uintData[3]) / std::numeric_limits<uint8_t>::max();
-                    
-                    r = fromSRGBToLinear(r);
-                    g = fromSRGBToLinear(g);
-                    b = fromSRGBToLinear(b);
-                    a = fromSRGBToLinear(a);
-                    
-                    uintData[0] = static_cast<uint8_t>(std::min(255.0f, r * std::numeric_limits<uint8_t>::max()));
-                    uintData[1] = static_cast<uint8_t>(std::min(255.0f, g * std::numeric_limits<uint8_t>::max()));
-                    uintData[2] = static_cast<uint8_t>(std::min(255.0f, b * std::numeric_limits<uint8_t>::max()));
-                    uintData[3] = static_cast<uint8_t>(std::min(255.0f, a * std::numeric_limits<uint8_t>::max()));
-                    
-                    uintData += 4;
-                }
-            }
-            
-            return;
-        }
+        return;
     }
     
     
+    if (_pixelFormat.componentType == PixelComponentType::float16) {
+        __fp16* halfData = reinterpret_cast<__fp16*>(_contents);
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                halfData[0] = fromSRGBToLinear(halfData[0]);
+                halfData[1] = fromSRGBToLinear(halfData[1]);
+                halfData[2] = fromSRGBToLinear(halfData[2]);
+                halfData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *halfData = fromSRGBToLinear(*halfData);
+                halfData += 1;
+            }
+        }
+        
+        return;
+    }
     
+    
+    if (_pixelFormat.componentType == PixelComponentType::float32) {
+        float* floatData = reinterpret_cast<float*>(_contents);
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                floatData[0] = fromSRGBToLinear(floatData[0]);
+                floatData[1] = fromSRGBToLinear(floatData[1]);
+                floatData[2] = fromSRGBToLinear(floatData[2]);
+                floatData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *floatData = fromSRGBToLinear(*floatData);
+                floatData += 1;
+            }
+        }
+        
+        return;
+    }
+    
+    
+    // General case. This actually should never happen, since every possible component type was processed earlier
     for (auto z = 0; z < _depth; z++) {
         for (auto y = 0; y < _height; y++) {
             for (auto x = 0; x < _width; x++) {
@@ -1288,10 +1294,14 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
                 pixel.r = fromSRGBToLinear(pixel.r);
                 pixel.g = fromSRGBToLinear(pixel.g);
                 pixel.b = fromSRGBToLinear(pixel.b);
+                if (!preserveAlpha) {
+                    pixel.a = fromSRGBToLinear(pixel.a);
+                }
                 _setPixel(pixel, x, y, z);
             }
         }
     }
+    
 }
 
 
@@ -1300,6 +1310,96 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
     _sRGB = true;
     _linear = false;
     
+    auto numPixels = _width * _height * _depth;
+    auto totalComponents = _width * _height * _depth * _pixelFormat.numComponents;
+    
+    if (_pixelFormat.componentType == PixelComponentType::uint8) {
+        uint8_t* uintData = reinterpret_cast<uint8_t*>(_contents);
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+#if USE_UINT8_TABLE
+                uintData[0] = uint8Table[uintData[0]].srgb;
+                uintData[1] = uint8Table[uintData[1]].srgb;
+                uintData[2] = uint8Table[uintData[2]].srgb;
+#else
+                auto r = static_cast<float>(uintData[0]) / std::numeric_limits<uint8_t>::max();
+                auto g = static_cast<float>(uintData[1]) / std::numeric_limits<uint8_t>::max();
+                auto b = static_cast<float>(uintData[2]) / std::numeric_limits<uint8_t>::max();
+                
+                r = fromLinearToSRGB(r);
+                g = fromLinearToSRGB(g);
+                b = fromLinearToSRGB(b);
+                
+                uintData[0] = static_cast<uint8_t>(std::min(255.0f, r * std::numeric_limits<uint8_t>::max()));
+                uintData[1] = static_cast<uint8_t>(std::min(255.0f, g * std::numeric_limits<uint8_t>::max()));
+                uintData[2] = static_cast<uint8_t>(std::min(255.0f, b * std::numeric_limits<uint8_t>::max()));
+#endif
+                
+                uintData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+#if USE_UINT8_TABLE
+                *uintData = uint8Table[*uintData].srgb;
+#else
+                auto c = static_cast<float>(*uintData) / std::numeric_limits<uint8_t>::max();
+                c = fromLinearToSRGB(c);
+                *uintData = static_cast<uint8_t>(std::min(255.0f, c * std::numeric_limits<uint8_t>::max()));
+#endif
+                uintData += 1;
+            }
+        }
+        
+        return;
+    }
+    
+    
+    if (_pixelFormat.componentType == PixelComponentType::float16) {
+        __fp16* halfData = reinterpret_cast<__fp16*>(_contents);
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                halfData[0] = fromLinearToSRGB(halfData[0]);
+                halfData[1] = fromLinearToSRGB(halfData[1]);
+                halfData[2] = fromLinearToSRGB(halfData[2]);
+                halfData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *halfData = fromLinearToSRGB(*halfData);
+                halfData += 1;
+            }
+        }
+        
+        return;
+    }
+    
+    
+    if (_pixelFormat.componentType == PixelComponentType::float32) {
+        float* floatData = reinterpret_cast<float*>(_contents);
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                floatData[0] = fromLinearToSRGB(floatData[0]);
+                floatData[1] = fromLinearToSRGB(floatData[1]);
+                floatData[2] = fromLinearToSRGB(floatData[2]);
+                floatData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *floatData = fromLinearToSRGB(*floatData);
+                floatData += 1;
+            }
+        }
+        
+        return;
+    }
+    
+    // General case. This actually should never happen, since every possible component type was processed earlier
     for (auto z = 0; z < _depth; z++) {
         for (auto y = 0; y < _height; y++) {
             for (auto x = 0; x < _width; x++) {
@@ -1311,6 +1411,7 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
             }
         }
     }
+    
 }
 
 
@@ -1354,14 +1455,6 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
 }
 
 
-long ImageContainer::calculateMipLevelCount() {
-    auto widthCount = _calculateMipCount(_width);
-    auto heightCount = _calculateMipCount(_height);
-    auto depthCount = _calculateMipCount(_depth);
-    return std::max(std::max(widthCount, heightCount), depthCount);
-}
-
-
 ImageContainer* fn_nullable ImageContainer::createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, ImageToolsError* fn_nullable error fn_noescape, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
     auto imageCopy = copy();
     imageCopy->_resample(algorithm, quality, width, height, depth, renormalize, userInfo, progressCallback);
@@ -1385,6 +1478,14 @@ ImageContainer* fn_nonnull ImageContainer::createLinearToSRGBConverted(bool pres
     auto imgCopy = copy();
     imgCopy->_linearToSRGB(preserveAlpha);
     return imgCopy;
+}
+
+
+long ImageContainer::calculateMipLevelCount() {
+    auto widthCount = _calculateMipCount(_width);
+    auto heightCount = _calculateMipCount(_height);
+    auto depthCount = _calculateMipCount(_depth);
+    return std::max(std::max(widthCount, heightCount), depthCount);
 }
 
 

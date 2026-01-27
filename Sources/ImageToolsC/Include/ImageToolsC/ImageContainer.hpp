@@ -14,6 +14,7 @@
 #include <ASTCEncoderC/ASTCEncoderC.hpp>
 
 
+struct ImageContainerCollection;
 class ImageContainer;
 class ImageEditor;
 
@@ -98,6 +99,26 @@ struct ImagePixelFormat {
 
 enum class ResamplingAlgorithm: long {
     lanczos = 0
+};
+
+
+#define IMAGE_CONTAINER_COLLECTION_MAX_IMAGES 23
+
+struct ImageContainerCollection final {
+private:
+    long _numImages;
+    ImageContainer* fn_nullable _images[IMAGE_CONTAINER_COLLECTION_MAX_IMAGES];
+    
+public:
+    ImageContainerCollection();
+    ImageContainerCollection(const ImageContainerCollection& other);
+    ImageContainerCollection(ImageContainerCollection&& other);
+    ~ImageContainerCollection();
+    
+    void add(ImageContainer* fn_nonnull image);
+    
+    long getNumImages() const SWIFT_COMPUTED_PROPERTY;
+    ImageContainer* fn_nonnull get(long index) const SWIFT_RETURNS_UNRETAINED;
 };
 
 
@@ -186,13 +207,15 @@ public:
     /// Creates a copy of the image container with modifier component type.
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
     
-    /// Estimates number of possible mip levels.
-    long calculateMipLevelCount();
     ImageContainer* fn_nullable createResampled(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createResampledUnsafe(_:quality:width:height:depth:renormalize:error:userInfo:progressCallback:));
     ImageContainer* fn_nullable createDownsampled(ResamplingAlgorithm algorithm, float quality, bool renormalize = false, ImageToolsError* fn_nullable error fn_noescape = nullptr, void* fn_nullable userInfo fn_noescape = nullptr, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_RETURNS_RETAINED SWIFT_NAME(__createDownsampledUnsafe(_:quality:renormalize:error:userInfo:progressCallback:));
     
-    ImageContainer* fn_nonnull createSRGBToLinearConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED;
-    ImageContainer* fn_nonnull createLinearToSRGBConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createSRGBToLinearConverted(bool preserveAlpha) SWIFT_NAME(createSRGBToLinearConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createLinearToSRGBConverted(bool preserveAlpha) SWIFT_NAME(createLinearToSRGBConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
+    
+    /// Estimates number of possible mip levels.
+    long calculateMipLevelCount();
+    //ImageContainerCollection generateMips(ResamplingAlgorithm algorithm, float quality, bool renormalize, bool ignoreColorSpace);
     
     //void generateCubeMap();
     
