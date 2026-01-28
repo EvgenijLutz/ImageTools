@@ -117,8 +117,11 @@ public extension ImageContainer {
                 componentMask = CGImageComponentInfo.float.rawValue
                 orderMask = CGImageByteOrderInfo.order16Little.rawValue
                 
+            case .float32:
+                componentMask = CGImageComponentInfo.float.rawValue
+                orderMask = CGImageByteOrderInfo.order32Little.rawValue
                 
-            default:
+            @unknown default:
                 throw ImageToolsError.other("Unknown pixel component type")
             }
             

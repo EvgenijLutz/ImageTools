@@ -16,8 +16,15 @@
 struct uint8_srgb_linear_value {
     uint8_t srgb;
     uint8_t linear;
-    float fpSRGB;
-    float fpLinear;
+    
+    __fp16 fp16SRGB;
+    __fp16 fp16Linear;
+    
+    float fp32SRGB;
+    float fp32Linear;
+    
+    __fp16 fp16Value;
+    float fp32Value;
 };
 
 

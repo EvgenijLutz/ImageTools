@@ -14,4 +14,6 @@
 #include <ImageToolsC/ImageContainer.hpp>
 #include <ImageToolsC/ImageEditor.hpp>
 
+void ImageTools_testThreadSpawning();
+
 #endif

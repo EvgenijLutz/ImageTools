@@ -10,6 +10,7 @@
 #include <JPEGTurboC/JPEGTurboC.hpp>
 #include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
+#include "Threading.hpp"
 #include "UInt8SRGBTable.hpp"
 #include <assert.h>
 
@@ -35,6 +36,10 @@
 #include "tinyexr/tinyexr.h"
 
 
+#define CONCURRENT_PROCESSING 1
+#define ImageContainer_createPromoted_new_implementation 1
+
+
 // MARK: - Common functions
 
 static long _calculateMipCount(long size) {
@@ -45,6 +50,75 @@ static long _calculateMipCount(long size) {
         currentSize /= 2;
     }
     return count;
+}
+
+
+template <PixelComponentType componentType, long numComponents>
+static inline ImagePixel _getPixel_(long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+    auto pixel = ImagePixel();
+    
+#if 1
+    // Clamp
+    x = std::clamp(x, 0l, width - 1);
+    y = std::clamp(y, 0l, height - 1);
+    z = std::clamp(z, 0l, depth - 1);
+#else
+    if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
+        return pixel;
+    }
+#endif
+    
+    auto index = (z * width * height + y * width + x) * numComponents;
+    
+    if constexpr (componentType == PixelComponentType::uint8) {
+        auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            pixel.contents[0] = static_cast<float>(uint8Pixel[0]) / std::numeric_limits<uint8_t>::max();
+        }
+        if constexpr (numComponents == 2) {
+            pixel.contents[1] = static_cast<float>(uint8Pixel[1]) / std::numeric_limits<uint8_t>::max();
+        }
+        if constexpr (numComponents == 3) {
+            pixel.contents[2] = static_cast<float>(uint8Pixel[2]) / std::numeric_limits<uint8_t>::max();
+        }
+        if constexpr (numComponents == 4) {
+            pixel.contents[3] = static_cast<float>(uint8Pixel[3]) / std::numeric_limits<uint8_t>::max();
+        }
+    }
+    
+    if constexpr (componentType == PixelComponentType::float16) {
+        auto float16Pixel = reinterpret_cast<__fp16*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            pixel.contents[0] = static_cast<float>(float16Pixel[0]);
+        }
+        if constexpr (numComponents == 2) {
+            pixel.contents[1] = static_cast<float>(float16Pixel[1]);
+        }
+        if constexpr (numComponents == 3) {
+            pixel.contents[2] = static_cast<float>(float16Pixel[2]);
+        }
+        if constexpr (numComponents == 4) {
+            pixel.contents[3] = static_cast<float>(float16Pixel[3]);
+        }
+    }
+    
+    if constexpr (componentType == PixelComponentType::float32) {
+        auto float32Pixel = reinterpret_cast<float*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            pixel.contents[0] = float32Pixel[0];
+        }
+        if constexpr (numComponents == 2) {
+            pixel.contents[1] = float32Pixel[1];
+        }
+        if constexpr (numComponents == 3) {
+            pixel.contents[2] = float32Pixel[2];
+        }
+        if constexpr (numComponents == 4) {
+            pixel.contents[3] = float32Pixel[3];
+        }
+    }
+    
+    return pixel;
 }
 
 
@@ -128,6 +202,64 @@ static inline void _setPixel(ImagePixel pixel, long x, long y, long z, long widt
 }
 
 
+template <PixelComponentType componentType, long numComponents>
+static inline void _setPixel_(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+    if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
+        return;
+    }
+    
+    auto index = (z * width * height + y * width + x) * numComponents;
+    
+    if constexpr (componentType == PixelComponentType::uint8) {
+        auto uint8Pixel = reinterpret_cast<uint8_t*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            uint8Pixel[0] = static_cast<uint8_t>(std::min(255.0f, pixel.contents[0] * std::numeric_limits<uint8_t>::max()));
+        }
+        if constexpr (numComponents == 2) {
+            uint8Pixel[1] = static_cast<uint8_t>(std::min(255.0f, pixel.contents[1] * std::numeric_limits<uint8_t>::max()));
+        }
+        if constexpr (numComponents == 3) {
+            uint8Pixel[2] = static_cast<uint8_t>(std::min(255.0f, pixel.contents[2] * std::numeric_limits<uint8_t>::max()));
+        }
+        if constexpr (numComponents == 4) {
+            uint8Pixel[3] = static_cast<uint8_t>(std::min(255.0f, pixel.contents[3] * std::numeric_limits<uint8_t>::max()));
+        }
+    }
+    
+    if constexpr (componentType == PixelComponentType::float16) {
+        auto float16Pixel = reinterpret_cast<__fp16*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            float16Pixel[0] = static_cast<__fp16>(pixel.contents[0]);
+        }
+        if constexpr (numComponents == 2) {
+            float16Pixel[1] = static_cast<__fp16>(pixel.contents[1]);
+        }
+        if constexpr (numComponents == 3) {
+            float16Pixel[2] = static_cast<__fp16>(pixel.contents[2]);
+        }
+        if constexpr (numComponents == 4) {
+            float16Pixel[3] = static_cast<__fp16>(pixel.contents[3]);
+        }
+    }
+    
+    if constexpr (componentType == PixelComponentType::float32) {
+        auto float32Pixel = reinterpret_cast<float*>(contents) + index;
+        if constexpr (numComponents == 1) {
+            float32Pixel[0] = pixel.contents[0];
+        }
+        if constexpr (numComponents == 2) {
+            float32Pixel[1] = pixel.contents[1];
+        }
+        if constexpr (numComponents == 3) {
+            float32Pixel[2] = pixel.contents[2];
+        }
+        if constexpr (numComponents == 4) {
+            float32Pixel[3] = pixel.contents[3];
+        }
+    }
+}
+
+
 static inline bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile, LCMSColorProfile* fn_nullable sourceColorProfile, long width, long height, char* fn_nonnull contents, ImagePixelFormat pixelFormat, bool hdr) {
     // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
     // TODO: For instance, struct EphemeralLCMSImage { /* ... */ };
@@ -188,6 +320,25 @@ static inline ImagePixel _sampleLanczosX(float x, float y, float z, float a, lon
 }
 
 
+template<PixelComponentType componentType, long numComponents>
+static inline ImagePixel _sampleLanczosX_(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+    long left = floor(x - a + 1);
+    long right = floor(x + a);
+    auto sum = ImagePixel();
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = _lanczos(x - i, a);
+        //sum += ::_getPixel(i, y, z, width, height, depth, contents, numComponents, componentType) * w;
+        sum += ::_getPixel_<componentType, numComponents>(i, y, z, width, height, depth, contents) * w;
+        totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
+    return sum / totalWeight;
+}
+
+
 static inline ImagePixel _sampleLanczosY(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     long left = floor(y - a + 1);
     long right = floor(y + a);
@@ -196,6 +347,24 @@ static inline ImagePixel _sampleLanczosY(float x, float y, float z, float a, lon
     for (auto i = left; i <= right; ++i) {
         float w = _lanczos(y - i, a);
         sum += ::_getPixel(x, i, z, width, height, depth, contents, numComponents, componentType) * w;
+        totalWeight += w;
+    }
+    if (renormalize) {
+        return (sum / totalWeight).normalized();
+    }
+    return sum / totalWeight;
+}
+
+
+template<PixelComponentType componentType, long numComponents>
+static inline ImagePixel _sampleLanczosY_(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+    long left = floor(y - a + 1);
+    long right = floor(y + a);
+    auto sum = ImagePixel();
+    float totalWeight = 0.0;
+    for (auto i = left; i <= right; ++i) {
+        float w = _lanczos(y - i, a);
+        sum += ::_getPixel_<componentType, numComponents>(x, i, z, width, height, depth, contents) * w;
         totalWeight += w;
     }
     if (renormalize) {
@@ -801,6 +970,149 @@ bool ImageContainer::_convertColourProfile(LCMSColorProfile* fn_nullable colorPr
 }
 
 
+#if ImageContainer_createPromoted_new_implementation
+
+void ImageContainer::_setComponentType(PixelComponentType componentType, ImageContainer* fn_nullable source fn_noescape) {
+    // Calculate size for the new buffer
+    //auto sourcePixelSize = _pixelFormat.getSize();
+    auto destinationPixelSize = _pixelFormat.numComponents * getPixelComponentTypeSize(componentType);
+    auto newSize = _width * _height * _depth * destinationPixelSize;
+    auto newContents = reinterpret_cast<char*>(std::malloc(newSize));
+    
+    union Content {
+        char* contents;
+        uint8_t* uint8;
+        __fp16* float16;
+        float* float32;
+    };
+    Content src = { .contents = _contents };
+    Content dst = { .contents = newContents };
+    
+    if (_pixelFormat.componentType == PixelComponentType::uint8 && componentType == PixelComponentType::float16) {
+        // uint8 to float16
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.uint8 + (z * _width * _height + y * _width);
+                auto dstValue = dst.float16 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    //*dstValue = uint8Table[*srcValue].fp16Value;
+                    *dstValue = static_cast<__fp16>(*srcValue) * 255;
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::uint8 && componentType == PixelComponentType::float32) {
+        // uint8 to float32
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.uint8 + (z * _width * _height + y * _width);
+                auto dstValue = dst.float32 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    //*dstValue = uint8Table[*srcValue].fp32Value;
+                    *dstValue = static_cast<float>(*srcValue) * 255;
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    
+    
+    if (_pixelFormat.componentType == PixelComponentType::float16 && componentType == PixelComponentType::uint8) {
+        // float16 to uint8
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.float16 + (z * _width * _height + y * _width);
+                auto dstValue = dst.uint8 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    *dstValue = static_cast<uint8_t>(std::min(static_cast<__fp16>(255), *srcValue));
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float16 && componentType == PixelComponentType::float32) {
+        // float16 to float32
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.float16 + (z * _width * _height + y * _width);
+                auto dstValue = dst.float32 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    *dstValue = static_cast<float>(*srcValue);
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    
+    
+    if (_pixelFormat.componentType == PixelComponentType::float32 && componentType == PixelComponentType::uint8) {
+        // float16 to uint8
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.float32 + (z * _width * _height + y * _width);
+                auto dstValue = dst.uint8 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    *dstValue = static_cast<uint8_t>(std::min(static_cast<float>(255), *srcValue));
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float32 && componentType == PixelComponentType::float16) {
+        // float16 to float32
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcValue = src.float32 + (z * _width * _height + y * _width);
+                auto dstValue = dst.float16 + (z * _width * _height + y * _width);
+                auto numValues = _width * _pixelFormat.numComponents;
+                for (auto x = 0; x < numValues; x++) {
+                    *dstValue = static_cast<__fp16>(*srcValue);
+                    srcValue += 1;
+                    dstValue += 1;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    
+    
+    else {
+        // General case
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                for (auto x = 0; x < _width; x++) {
+                    // Read pixel as float32
+                    auto pixel = ::_getPixel(x, y, z,
+                                             _width, _height, _depth,
+                                             _contents, _pixelFormat.numComponents, _pixelFormat.componentType);
+                    
+                    // Write pixel in target pixel format
+                    ::_setPixel(pixel, x, y, z,
+                                _width, _height, _depth,
+                                newContents, _pixelFormat.numComponents, componentType);
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    
+    // Apply changes
+    _pixelFormat.componentType = componentType;
+    std::free(_contents);
+    _contents = newContents;
+}
+
+#else
+
 void ImageContainer::_setComponentType(PixelComponentType componentType, ImageContainer* fn_nullable source fn_noescape) {
     // Calculate size for the new buffer
     auto sourceComponentSize = getPixelComponentTypeSize(_pixelFormat.componentType);
@@ -862,6 +1174,8 @@ void ImageContainer::_setComponentType(PixelComponentType componentType, ImageCo
     // Apply changes
     _pixelFormat.componentType = componentType;
 }
+
+#endif
 
 
 bool ImageContainer::_setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape) {
@@ -1103,32 +1417,61 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
                                static_cast<float>(_depth) / depth);
     
     // Horizontal pass
-    for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < _height; y++) {
-            for (auto x = 0; x < width; x++) {
-                float srcX = (x + 0.5) * scale.x - 0.5;
-                auto pixel = ::_sampleLanczosX(srcX, y, z, quality, _width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
-                ::_setPixel(pixel, x, y, z, width, _height, _depth, destinationContents, numComponents, componentType);
-            }
-            
-            // Check cancellation
-            progressHandler.notifyProgress();
+    /*if (componentType == PixelComponentType::float16 && numComponents == 4) {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                for (auto x = 0; x < width; x++) {
+                    float srcX = (x + 0.5) * scale.x - 0.5;
+                    auto pixel = ::_sampleLanczosX_<PixelComponentType::float16, 4>(srcX, y, z, quality, _width, _height, _depth, sourceContents, renormalize);
+                    //::_setPixel_<PixelComponentType::float16, 4>(pixel, x, y, z, width, _height, _depth, destinationContents);
+                    
+                    //auto pixel = ::_sampleLanczosX(srcX, y, z, quality, _width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
+                    ::_setPixel(pixel, x, y, z, width, _height, _depth, destinationContents, numComponents, componentType);
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else*/ {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                for (auto x = 0; x < width; x++) {
+                    float srcX = (x + 0.5) * scale.x - 0.5;
+                    auto pixel = ::_sampleLanczosX(srcX, y, z, quality, _width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
+                    ::_setPixel(pixel, x, y, z, width, _height, _depth, destinationContents, numComponents, componentType);
+                }
+            } CONCURRENT_LOOP_END
         }
     }
     // Prepare source and destination contents for further processing
     std::swap(sourceContents, destinationContents);
     
     // Vertical pass
-    for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < height; y++) {
-            for (auto x = 0; x < width; x++) {
-                float srcY = (y + 0.5) * scale.y - 0.5;
-                auto pixel = ::_sampleLanczosY(x, srcY, z, quality, width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
-                ::_setPixel(pixel, x, y, z, width, height, _depth, destinationContents, numComponents, componentType);
-            }
-            
-            // Check cancellation
-            progressHandler.notifyProgress();
+    /*if (componentType == PixelComponentType::float16 && numComponents == 4) {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, height, y) {
+                for (auto x = 0; x < width; x++) {
+                    float srcY = (y + 0.5) * scale.y - 0.5;
+                    auto pixel = ::_sampleLanczosY_<PixelComponentType::float16, 4>(x, srcY, z, quality, width, _height, _depth, sourceContents, renormalize);
+                    ::_setPixel_<PixelComponentType::float16, 4>(pixel, x, y, z, width, height, _depth, destinationContents);
+                }
+                
+                // Check cancellation
+                progressHandler.notifyProgress();
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else*/ {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, height, y) {
+                for (auto x = 0; x < width; x++) {
+                    float srcY = (y + 0.5) * scale.y - 0.5;
+                    auto pixel = ::_sampleLanczosY(x, srcY, z, quality, width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
+                    ::_setPixel(pixel, x, y, z, width, height, _depth, destinationContents, numComponents, componentType);
+                }
+                
+                // Check cancellation
+                progressHandler.notifyProgress();
+            } CONCURRENT_LOOP_END
         }
     }
     // Prepare source and destination contents for further processing
@@ -1137,7 +1480,7 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
     // Depth pass if needed
     if (depth > 1) {
         for (auto z = 0; z < depth; z++) {
-            for (auto y = 0; y < height; y++) {
+            CONCURRENT_LOOP_START(0, height, y) {
                 for (auto x = 0; x < width; x++) {
                     float srcZ = (z + 0.5) * scale.z - 0.5;
                     auto pixel = ::_sampleLanczosZ(x, y, srcZ, quality, width, height, _depth, sourceContents, numComponents, componentType, renormalize);
@@ -1146,7 +1489,7 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
                 
                 // Check cancellation
                 progressHandler.notifyProgress();
-            }
+            } CONCURRENT_LOOP_END
         }
         // Prepare source and destination contents for further processing
         std::swap(sourceContents, destinationContents);
@@ -1288,6 +1631,52 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
     
     // General case. This actually should never happen, since every possible component type was processed earlier
     for (auto z = 0; z < _depth; z++) {
+#if CONCURRENT_PROCESSING
+        
+#if 0
+        struct Context {
+            ImageContainer* imageContainer;
+            long z;
+            bool preserveAlpha;
+        };
+        processConcurrently<Context>({
+            .imageContainer = this,
+            .z = z,
+            .preserveAlpha = preserveAlpha
+        }, 0, _height, [](Context& context, long y) {
+            auto img = context.imageContainer;
+            auto z = context.z;
+            auto preserveAlpha = context.preserveAlpha;
+            auto width = context.imageContainer->_width;
+            
+            for (auto x = 0; x < width; x++) {
+                auto pixel = img->getPixel(x, y, z);
+                pixel.r = fromSRGBToLinear(pixel.r);
+                pixel.g = fromSRGBToLinear(pixel.g);
+                pixel.b = fromSRGBToLinear(pixel.b);
+                if (!preserveAlpha) {
+                    pixel.a = fromSRGBToLinear(pixel.a);
+                }
+                img->_setPixel(pixel, x, y, z);
+            }
+        });
+#else
+        CONCURRENT_LOOP_START(0, _height, y) {
+            for (auto x = 0; x < _width; x++) {
+                auto pixel = getPixel(x, y, z);
+                pixel.r = fromSRGBToLinear(pixel.r);
+                pixel.g = fromSRGBToLinear(pixel.g);
+                pixel.b = fromSRGBToLinear(pixel.b);
+                if (!preserveAlpha) {
+                    pixel.a = fromSRGBToLinear(pixel.a);
+                }
+                _setPixel(pixel, x, y, z);
+            }
+        } CONCURRENT_LOOP_END
+#endif
+        
+        
+#else
         for (auto y = 0; y < _height; y++) {
             for (auto x = 0; x < _width; x++) {
                 auto pixel = getPixel(x, y, z);
@@ -1300,8 +1689,8 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
                 _setPixel(pixel, x, y, z);
             }
         }
+#endif
     }
-    
 }
 
 
@@ -1309,6 +1698,8 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
     LCMSColorProfileRelease(_colorProfile);
     _sRGB = true;
     _linear = false;
+    
+    //printUInt8Table();
     
     auto numPixels = _width * _height * _depth;
     auto totalComponents = _width * _height * _depth * _pixelFormat.numComponents;
@@ -1401,7 +1792,7 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
     
     // General case. This actually should never happen, since every possible component type was processed earlier
     for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < _height; y++) {
+        CONCURRENT_LOOP_START(0, _height, y) {
             for (auto x = 0; x < _width; x++) {
                 auto pixel = getPixel(x, y, z);
                 pixel.r = fromLinearToSRGB(pixel.r);
@@ -1409,7 +1800,7 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
                 pixel.b = fromLinearToSRGB(pixel.b);
                 _setPixel(pixel, x, y, z);
             }
-        }
+        } CONCURRENT_LOOP_END
     }
     
 }
@@ -1440,6 +1831,11 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
         return ImageContainerRetain(this);
     }
     
+#if ImageContainer_createPromoted_new_implementation
+    auto imgCopy = copy();
+    imgCopy->_setComponentType(componentType, nullptr);
+    return imgCopy;
+#else
     // Allocate memory
     auto pixelFormat = _pixelFormat;
     pixelFormat.componentType = componentType;
@@ -1452,6 +1848,7 @@ ImageContainer* fn_nonnull ImageContainer::createPromoted(PixelComponentType com
     container->_setComponentType(componentType, this);
     
     return container;
+#endif
 }
 
 
