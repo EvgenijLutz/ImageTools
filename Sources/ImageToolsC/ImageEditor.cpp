@@ -109,7 +109,7 @@ ImagePixelFormat ImageEditor::getPixelFormat() SWIFT_COMPUTED_PROPERTY {
 
 
 void ImageEditor::setComponentType(PixelComponentType componentType) {
-    _image->_setComponentType(componentType, nullptr);
+    _image->_setComponentType(componentType);
 }
 
 
@@ -154,12 +154,12 @@ LCMSColorProfile* fn_nullable ImageEditor::getColorProfile() SWIFT_COMPUTED_PROP
 
 
 void ImageEditor::setColorProfile(LCMSColorProfile* fn_nullable colorProfile) SWIFT_COMPUTED_PROPERTY {
-    _image->_assignColourProfile(colorProfile);
+    _image->_assignColorProfile(colorProfile);
 }
 
 
 bool ImageEditor::convertColorProfile(LCMSColorProfile* fn_nullable colorProfile) {
-    return _image->_convertColourProfile(colorProfile);
+    return _image->_convertColorProfile(colorProfile);
 }
 
 

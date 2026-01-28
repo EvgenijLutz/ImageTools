@@ -163,10 +163,9 @@ private:
     friend class ImageEditor;
     FN_FRIEND_SWIFT_INTERFACE(ImageContainer)
     
-    void _assignColourProfile(LCMSColorProfile* fn_nullable colorProfile);
-    bool _convertColourProfile(LCMSColorProfile* fn_nullable colorProfile);
-    // TODO: Get rid of source, it doesn't worth it to make things so complex
-    void _setComponentType(PixelComponentType componentType, ImageContainer* fn_nullable source fn_noescape);
+    void _assignColorProfile(LCMSColorProfile* fn_nullable colorProfile);
+    bool _convertColorProfile(LCMSColorProfile* fn_nullable colorProfile);
+    void _setComponentType(PixelComponentType componentType);
     bool _setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape);
     ImagePixel _getPixel(long x, long y, long z, long numComponents, PixelComponentType componentType);
     void _setPixel(ImagePixel pixel, long x, long y, long z, long numComponents, PixelComponentType componentType);
