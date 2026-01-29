@@ -33,6 +33,7 @@ public extension ImageContainer {
                 throw ImageToolsError.other("Something is wrong with image data")
             }
             
+            let numComponents = Int(pixelFormat.numComponents)
             let componentType = pixelFormat.componentType
             
             let cgColorProfile: CGColorSpace = try {
@@ -48,6 +49,22 @@ public extension ImageContainer {
                 }
                 
                 let colorSpaceName: CFString = {
+                    if numComponents == 1 {
+                        if hdr {
+                            if srgb {
+                                return CGColorSpace.extendedGray
+                            }
+                            
+                            return CGColorSpace.extendedLinearGray
+                        }
+                        
+                        if srgb {
+                            return CGColorSpace.genericGrayGamma2_2
+                        }
+                        
+                        return CGColorSpace.linearGray
+                    }
+                    
                     struct ColorSpaceNames {
                         let linearHdr: CFString
                         let linear: CFString
@@ -96,7 +113,6 @@ public extension ImageContainer {
                 return colorProfile
             }()
             
-            let numComponents = Int(pixelFormat.numComponents)
             let alphaMask: UInt32
             switch numComponents {
             case 1: alphaMask = CGImageAlphaInfo.none.rawValue
