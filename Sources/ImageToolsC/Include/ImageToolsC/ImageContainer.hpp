@@ -178,6 +178,7 @@ private:
     void _linearToSRGB(bool preserveAlpha);
     
 public:
+    static ImageContainer* fn_nonnull create(const char* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) SWIFT_RETURNS_RETAINED;
     // TODO: Implement conversion from ASTCRawImage or ASTCImage
     //static ImageContainer* fn_nonnull create(ASTCRawImage* fn_nonnull decompressedImage, ImageContainer* fn_nonnull originalImage);

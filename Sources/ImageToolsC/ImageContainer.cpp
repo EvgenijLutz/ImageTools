@@ -565,6 +565,18 @@ ImageContainer::~ImageContainer() {
 }
 
 
+ImageContainer* fn_nonnull ImageContainer::create(const char* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED {
+    auto size = width * height * pixelFormat.getSize();
+    auto buffer = new char[size];
+    std::memcpy(buffer, contents, size);
+    
+    return new ImageContainer(pixelFormat,
+                              false, true, false,
+                              buffer, width, height, 1,
+                              nullptr);
+}
+
+
 ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) {
     width = std::max(1l, width);
     height = std::max(1l, height);
