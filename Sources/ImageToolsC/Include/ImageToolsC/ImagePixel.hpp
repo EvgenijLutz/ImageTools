@@ -182,16 +182,16 @@ struct Float16Pixel final {
 #if IS_APPLE
         simd_half4 __half4;
 #endif
-        __fp16 contents[4];
+        _Float16 contents[4];
         struct {
-            __fp16 r;
-            __fp16 g;
-            __fp16 b;
-            __fp16 a;
+            _Float16 r;
+            _Float16 g;
+            _Float16 b;
+            _Float16 a;
         };
     };
     
-    Float16Pixel(__fp16 r, __fp16 g, __fp16 b, __fp16 a): r(r), g(g), b(b), a(a) { }
+    Float16Pixel(_Float16 r, _Float16 g, _Float16 b, _Float16 a): r(r), g(g), b(b), a(a) { }
     
 #if IS_APPLE
     Float16Pixel(simd_half4 vec): __half4(vec) { }
@@ -199,7 +199,7 @@ struct Float16Pixel final {
     
     Float16Pixel(): Float16Pixel(0, 0, 0, 0) { }
     
-    __fp16 length() const {
+    _Float16 length() const {
 #if IS_APPLE
         return simd_length(__half4);
 #else
@@ -266,7 +266,7 @@ struct Float16Pixel final {
         return *this;
     }
     
-    Float16Pixel operator * (__fp16 other) const {
+    Float16Pixel operator * (_Float16 other) const {
 #if IS_APPLE
         return __half4 * other;
 #else
@@ -277,7 +277,7 @@ struct Float16Pixel final {
 #endif
     }
     
-    Float16Pixel operator *= (__fp16 other) {
+    Float16Pixel operator *= (_Float16 other) {
 #if IS_APPLE
         __half4 *= other;
 #else
@@ -289,7 +289,7 @@ struct Float16Pixel final {
         return *this;
     }
     
-    Float16Pixel operator / (__fp16 other) const {
+    Float16Pixel operator / (_Float16 other) const {
 #if IS_APPLE
         return __half4 / other;
 #else
@@ -300,7 +300,7 @@ struct Float16Pixel final {
 #endif
     }
     
-    Float16Pixel operator /= (__fp16 other) {
+    Float16Pixel operator /= (_Float16 other) {
 #if IS_APPLE
         __half4 /= other;
 #else
