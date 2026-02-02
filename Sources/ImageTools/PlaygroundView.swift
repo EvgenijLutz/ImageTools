@@ -251,11 +251,16 @@ func testCompressedMips(path: String,
             source = source.createPromoted(originalComponentType)
         }
         
+        let containsAlpha = source.pixelFormat.numComponents == 4
+        let hdr = source.hdr
+        let ldrAlpha = hdr && containsAlpha
+        
+        
         // Compress image
         let astc = try source.createASTCCompressed(blockSize: blockSize,
                                                    quality: quality,
-                                                   containsAlpha: normalMap == false,
-                                                   ldrAlpha: true,
+                                                   containsAlpha: containsAlpha,
+                                                   ldrAlpha: ldrAlpha,
                                                    normalMap: normalMap
         ) { compressionProgress in
             notifyProgress(currentCompressionProgress: 0.5 + compressionProgress * 0.5)

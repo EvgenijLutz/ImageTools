@@ -1063,8 +1063,13 @@ void ImageContainer::_setComponentType(PixelComponentType componentType) {
                 auto dstValue = dst.uint8 + (z * _width * _height + y * _width) * _pixelFormat.numComponents;
                 auto numValues = _width * _pixelFormat.numComponents;
                 for (auto x = 0; x < numValues; x++) {
-                    const auto fpMax = static_cast<_Float16>(255);
-                    *dstValue = static_cast<uint8_t>(std::min(fpMax, static_cast<_Float16>(*srcValue * 255)));
+                    constexpr auto _min = static_cast<_Float16>(0);
+                    constexpr auto _max = static_cast<_Float16>(255);
+                    auto value = std::clamp(*srcValue * _max, _min, _max);
+                    *dstValue = static_cast<uint8_t>(value);
+                    //const auto fpMax = static_cast<_Float16>(255);
+                    //auto value = std::min(fpMax, static_cast<_Float16>(*srcValue * 255));
+                    //*dstValue = static_cast<uint8_t>(std::max(static_cast<_Float16>(0), value));
                     srcValue += 1;
                     dstValue += 1;
                 }
@@ -1096,7 +1101,11 @@ void ImageContainer::_setComponentType(PixelComponentType componentType) {
                 auto dstValue = dst.uint8 + (z * _width * _height + y * _width) * _pixelFormat.numComponents;
                 auto numValues = _width * _pixelFormat.numComponents;
                 for (auto x = 0; x < numValues; x++) {
-                    *dstValue = static_cast<uint8_t>(std::min(255.0f, *srcValue * 255.0f));
+                    auto value = std::clamp(*srcValue * 255.0f, 0.0f, 255.0f);
+                    *dstValue = static_cast<uint8_t>(value);
+                    //auto value = std::min(255.0f, *srcValue * 255.0f);
+                    //*dstValue = static_cast<uint8_t>(std::max(0.0f, value));
+                    //*dstValue = static_cast<uint8_t>(std::min(255.0f, *srcValue * 255.0f));
                     srcValue += 1;
                     dstValue += 1;
                 }

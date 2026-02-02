@@ -7,8 +7,8 @@ import PackageDescription
 let dependencies: [Package.Dependency] = {
 #if true
     [
-        .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: "1.0.2"),
-        .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.1.3"),
+        .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: .init(1, 0, 2)),
+        .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: .init(3, 1, 3)),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 3)),
         .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0-rev2"),
@@ -78,6 +78,8 @@ let package = Package(
             ]
         ),
     ],
+    // The astcenc library was compiled using c17, so set it also here
     cLanguageStandard: .c17,
+    // Also use c++20, we don't live in the stone age, but still not ready to accept c++23
     cxxLanguageStandard: .cxx20
 )
