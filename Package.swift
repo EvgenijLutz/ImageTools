@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.3
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -9,9 +9,9 @@ let dependencies: [Package.Dependency] = {
     [
         .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: .init(1, 0, 2)),
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: .init(3, 1, 3)),
-        .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 50)),
-        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 17, 3)),
-        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0-rev2"),
+        .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 56)),
+        .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 18, 0)),
+        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0"),
         //.package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 3, 0)),
     ]
 #else
