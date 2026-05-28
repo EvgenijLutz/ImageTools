@@ -44,10 +44,10 @@ public extension ImageContainer {
     ///
     /// - Parameter path: Path to load image from.
     /// - Parameter assumeSRGB: Assume the color profile to be sRGB if it could not be determined during the image loading process.
-    static func load(path: String, assumeSRGB: Bool = true, assumeLinear: Bool = false, assumedColorProfile: LCMSColorProfile? = nil) throws -> sending ImageContainer {
+    static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageContainer {
         var error = ImageToolsError()
         let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.__loadUnsafe(cString, assumeSRGB, assumeLinear, assumedColorProfile, &error)
+            ImageContainer.__loadUnsafe(cString, assumedColorProfile, assumeSRGB, &error)
         }
         guard let image else {
             throw error
@@ -57,9 +57,9 @@ public extension ImageContainer {
     }
     
     
-    static func load(path: String, assumeSRGB: Bool = true, assumeLinear: Bool = false, assumedColorProfile: LCMSColorProfile? = nil) async throws -> sending ImageContainer {
+    static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) async throws -> sending ImageContainer {
         try await Task {
-            return try ImageContainer.load(path: path, assumeSRGB: assumeSRGB, assumeLinear: assumeLinear, assumedColorProfile: assumedColorProfile)
+            return try ImageContainer.load(path: path, assumedColorProfile: assumedColorProfile, assumeSRGB: assumeSRGB)
         }.value
     }
 }

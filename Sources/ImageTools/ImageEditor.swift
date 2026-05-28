@@ -10,10 +10,10 @@ import ImageToolsC
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ImageEditor {
-    static func load(path: String, assumeSRGB: Bool = true, assumeLinear: Bool = false, assumedColorProfile: LCMSColorProfile? = nil) throws -> sending ImageEditor {
+    static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageEditor {
         var error = ImageToolsError()
         let image: ImageEditor? = path.withCString { cString in
-            ImageEditor.__loadUnsafe(cString, assumeSRGB, assumeLinear, assumedColorProfile, &error)
+            ImageEditor.__loadUnsafe(cString, assumedColorProfile, assumeSRGB, &error)
         }
         guard let image else {
             throw error

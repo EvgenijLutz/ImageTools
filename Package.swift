@@ -11,8 +11,8 @@ let dependencies: [Package.Dependency] = {
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: .init(3, 1, 3)),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 56)),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 18, 0)),
-        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.3.0"),
-        //.package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 3, 0)),
+        //.package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", exact: "5.4.0"),
+        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 4, 0)),
     ]
 #else
     [

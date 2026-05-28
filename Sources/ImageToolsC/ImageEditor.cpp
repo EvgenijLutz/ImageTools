@@ -26,8 +26,8 @@ ImageEditor* fn_nonnull ImageEditor::create(ImageContainer* fn_nonnull image) {
 }
 
 
-ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
-    auto image = ImageContainer::load(path, assumeSRGB, assumeLinear, assumedColorProfile, error);
+ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
+    auto image = ImageContainer::load(path, assumedColorProfile, assumeSRGB, error);
     if (image == nullptr) {
         return nullptr;
     }
@@ -83,16 +83,6 @@ bool ImageEditor::getSRGB() const {
 void ImageEditor::setSRGB(bool value) {
     _image->_sRGB = value;
 }
-
-
-bool ImageEditor::getLinear() const {
-    return _image->_linear;
-}
-
-void ImageEditor::setLinear(bool value) {
-    _image->_linear = value;
-}
-
 
 bool ImageEditor::getHDR() const {
     return _image->_hdr;

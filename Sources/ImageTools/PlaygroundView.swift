@@ -194,12 +194,12 @@ func testCompressedMips(path: String,
     // Load image
     let lowercasedPath = path.lowercased()
     let assumeSRGB = lowercasedPath.hasSuffix(".hdr") == false && lowercasedPath.hasSuffix(".tga") == false
-    let assumeLinear = assumeSRGB == false
-    let image = try ImageEditor.load(path: path, assumeSRGB: assumeSRGB, assumeLinear: assumeLinear)
+    let image = try ImageEditor.load(path: path, assumeSRGB: assumeSRGB)
     //return try [image.cgImage]
     
-    if let profile = image.colorProfile {
-        let srgb = profile.checkIsSRGB()
+    let originalColorProfile = image.colorProfile
+    if let originalColorProfile {
+        let srgb = originalColorProfile.checkIsSRGB()
         print("sRGB: \(srgb)")
     }
     
@@ -249,6 +249,12 @@ func testCompressedMips(path: String,
         if shouldConvertComponentType {
             // TODO: Progress callback: 0.3 * decompressionProgress * 0.2
             source = source.createPromoted(originalComponentType)
+        }
+        // Convert back to originalColorProfile
+        if let originalColorProfile {
+            let c = ImageEditor(source)
+            c.convertColorProfile(originalColorProfile)
+            source = c.getImageCopy()
         }
         
         let containsAlpha = source.pixelFormat.numComponents == 4

@@ -49,6 +49,7 @@ public extension ImageContainer {
                 }
                 
                 let colorSpaceName: CFString = {
+                    // CGColorSpace for a single-channel image
                     if numComponents == 1 {
                         if hdr {
                             if srgb {
@@ -65,45 +66,20 @@ public extension ImageContainer {
                         return CGColorSpace.linearGray
                     }
                     
-                    struct ColorSpaceNames {
-                        let linearHdr: CFString
-                        let linear: CFString
-                        let gammaHdr: CFString
-                        let gamma: CFString
+                    // CGColorSpace for a multi-channel image
+                    if hdr {
+                        if srgb {
+                            return CGColorSpace.extendedSRGB
+                        }
+                        
+                        return CGColorSpace.extendedLinearSRGB
                     }
                     
-                    let sRGB = ColorSpaceNames(
-                        linearHdr: CGColorSpace.extendedLinearSRGB,
-                        linear: CGColorSpace.linearSRGB,
-                        gammaHdr: CGColorSpace.extendedSRGB,
-                        gamma: CGColorSpace.sRGB
-                    )
-                    
-                    let unknown = ColorSpaceNames(
-                        linearHdr: CGColorSpace.genericRGBLinear,
-                        linear: CGColorSpace.genericRGBLinear,
-                        gammaHdr: CGColorSpace.genericRGBLinear,
-                        gamma: CGColorSpace.genericRGBLinear
-                    )
-                    
-                    let names = srgb ? sRGB : unknown
-                    
-                    if linear {
-                        if hdr {
-                            return names.linearHdr
-                        }
-                        else {
-                            return names.linear
-                        }
+                    if srgb {
+                        return CGColorSpace.sRGB
                     }
-                    else {
-                        if hdr {
-                            return names.gammaHdr
-                        }
-                        else {
-                            return names.gamma
-                        }
-                    }
+                    
+                    return CGColorSpace.genericRGBLinear
                 }()
                 
                 guard let colorProfile = CGColorSpace(name: colorSpaceName) else {

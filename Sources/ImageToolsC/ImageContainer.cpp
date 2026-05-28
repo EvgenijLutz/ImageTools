@@ -14,17 +14,6 @@
 #include "UInt8SRGBTable.hpp"
 #include <assert.h>
 
-
-#if __has_include(<TargetConditionals.h>)
-#include <TargetConditionals.h>
-#endif
-
-#if defined __APPLE__
-#define STBI_NEON
-#else
-// No NEON :(
-#endif
-
 #include "stb/stb_image.h"
 #include "tinyexr/tinyexr.h"
 
@@ -539,12 +528,11 @@ ImageContainer* fn_nonnull ImageContainerCollection::get(long index) const SWIFT
 
 // MARK: - ImageContainer
 
-ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, char* fn_nonnull contents, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile):
+ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, char* fn_nonnull contents, long width, long height, long depth):
 _referenceCounter(1),
 _pixelFormat(pixelFormat),
 _colorProfile(colorProfile),
 _sRGB(sRGB),
-_linear(linear),
 _hdr(hdr),
 _contents(contents),
 _width(width),
@@ -571,18 +559,17 @@ ImageContainer* fn_nonnull ImageContainer::create(const char* fn_nonnull content
     std::memcpy(buffer, contents, size);
     
     return new ImageContainer(pixelFormat,
-                              false, true, false,
-                              buffer, width, height, 1,
-                              nullptr);
+                              nullptr, false, false,
+                              buffer, width, height, 1);
 }
 
 
-ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, bool sRGB, bool linear, bool hdr, long width, long height, long depth, LCMSColorProfile* fn_nullable colorProfile) {
+ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, long width, long height, long depth) {
     width = std::max(1l, width);
     height = std::max(1l, height);
     depth = std::max(1l, depth);
     auto contents = new char [width * height * depth * pixelFormat.getSize()];
-    return new ImageContainer(pixelFormat, sRGB, linear, hdr, contents, width, height, depth, LCMSColorProfileRetain(colorProfile));
+    return new ImageContainer(pixelFormat, LCMSColorProfileRetain(colorProfile), sRGB, hdr, contents, width, height, depth);
 }
 
 
@@ -592,7 +579,7 @@ ImageContainer* fn_nonnull ImageContainer::createRGBA8Unorm(long width, long hei
     auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
     std::memset(contents, 0xFF, contentsSize);
     
-    return new ImageContainer(pixelFormat, true, true, false, contents, width, height, 1, nullptr);
+    return new ImageContainer(pixelFormat, nullptr, true, false, contents, width, height, 1);
 }
 
 
@@ -629,8 +616,8 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const char* fn_nonnull p
     
     auto numComponents = tga->getNumComponents();
     auto pixelFormat = ImagePixelFormat(PixelComponentType::uint8, numComponents);
+    // Assume sRGB colour space
     auto sRGB = true;
-    auto linear = false;
     auto hdr = false;
     auto contentsSize = tga->getSize();
     auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
@@ -640,7 +627,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const char* fn_nonnull p
     TGAImageRelease(tga);
     
     // Extract TGA image contents
-    return new ImageContainer(pixelFormat, sRGB, linear, hdr, contents, width, height, 1, nullptr);
+    return new ImageContainer(pixelFormat, nullptr, sRGB, hdr, contents, width, height, 1);
 }
 
 
@@ -774,7 +761,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull p
     // Clean up
     PNGImageRelease(png);
     
-    return new ImageContainer(pixelFormat, sRGB, false, false, contents, width, height, depth, colorProfile);
+    return new ImageContainer(pixelFormat, colorProfile, sRGB, false, contents, width, height, depth);
 }
 
 
@@ -842,7 +829,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
     auto rec709 = LCMSColorProfile::createRec709();
     
     // Create container
-    auto container = new ImageContainer(pixelFormat, false, false, true, contents, width, height, depth, rec709);
+    auto container = new ImageContainer(pixelFormat, rec709, false, true, contents, width, height, depth);
     
     // Clean up
     std::free(exrContents);
@@ -852,7 +839,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
 }
 
 
-ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile, ImageToolsError* fn_nullable error fn_noescape) {
+ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) {
     // Get image name
     auto imageName = _getName(path);
     
@@ -896,7 +883,6 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     
     // Assumptions
     auto sRGB = assumeSRGB;
-    auto linear = assumeLinear;
     auto isHdr = false;
     
     // Use stb_image to try to load the image
@@ -954,13 +940,8 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     // Take the assumed colour profile if specified, since stb_image does not provide it
     LCMSColorProfile* fn_nullable colorProfile = LCMSColorProfileRetain(assumedColorProfile);
     
-    // Override linear setting if colourProfile is presented
-    if (colorProfile) {
-        linear = colorProfile->checkIsLinear();
-    }
-    
     printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
-    return new ImageContainer(pixelFormat, sRGB, linear, isHdr, contents, width, height, 1, colorProfile);
+    return new ImageContainer(pixelFormat, colorProfile, sRGB, isHdr, contents, width, height, 1);
 }
 
 
@@ -979,11 +960,6 @@ void ImageContainer::_assignColorProfile(LCMSColorProfile* fn_nullable colorProf
     // Check if colour profile is sRGB
     if (_colorProfile) {
         _sRGB = _colorProfile->checkIsSRGB();
-    }
-    
-    // Check if colour profile is linear
-    if (_colorProfile) {
-        _linear = _colorProfile->checkIsLinear();
     }
 }
 
@@ -1345,19 +1321,13 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
         }
     }
     else if (_sRGB) {
-        // Check if the colour profile should be converted at all
-        if (_linear) {
-            //printf("Colour profile is already linear\n");
+        auto sRGBProfile = LCMSColorProfile::createSRGB();
+        linearProfile = sRGBProfile->createLinear();
+        if (linearProfile == nullptr) {
+            // This should never happen
+            printf("Could not create linear colour profile\n");
         }
-        else {
-            auto sRGBProfile = LCMSColorProfile::createSRGB();
-            linearProfile = sRGBProfile->createLinear();
-            if (linearProfile == nullptr) {
-                // This should never happen
-                printf("Could not create linear colour profile\n");
-            }
-            LCMSColorProfileRelease(sRGBProfile);
-        }
+        LCMSColorProfileRelease(sRGBProfile);
     }
     
     // Create source image with linear color profile
@@ -1541,7 +1511,6 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
     LCMSColorProfileRelease(_colorProfile);
     _colorProfile = nullptr;
     _sRGB = false;
-    _linear = true;
     
     auto numPixels = _width * _height * _depth;
     auto totalComponents = _width * _height * _depth * _pixelFormat.numComponents;
@@ -1684,7 +1653,6 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
     LCMSColorProfileRelease(_colorProfile);
     _colorProfile = nullptr;
     _sRGB = true;
-    _linear = false;
     
     //printUInt8Table();
     
@@ -1808,7 +1776,7 @@ ImageContainer* fn_nonnull ImageContainer::copy() {
     auto colorProfile = LCMSColorProfileRetain(_colorProfile);
     
     // Create a new ImageContainer instance
-    return new ImageContainer(_pixelFormat, _sRGB, _linear, _hdr, contentsCopy, _width, _height, _depth, colorProfile);
+    return new ImageContainer(_pixelFormat, colorProfile, _sRGB, _hdr, contentsCopy, _width, _height, _depth);
 }
 
 
@@ -1870,7 +1838,8 @@ ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockS
     
     // Create an image to compress
     auto integerComponents = _pixelFormat.componentType == PixelComponentType::uint8;
-    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, _linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
+    auto linear = _colorProfile == nullptr && _sRGB == false;
+    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
     if (rawImage == nullptr) {
         printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
         return nullptr;

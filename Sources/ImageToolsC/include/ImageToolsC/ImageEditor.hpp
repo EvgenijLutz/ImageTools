@@ -30,7 +30,7 @@ private:
 public:
     static ImageEditor* fn_nonnull create(ImageContainer* fn_nonnull image) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
     
-    static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, bool assumeSRGB, bool assumeLinear, LCMSColorProfile* fn_nullable assumedColorProfile, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(_:_:_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     void edit(ImageContainer* fn_nonnull image);
     
@@ -43,9 +43,6 @@ public:
     
     bool getSRGB() const SWIFT_COMPUTED_PROPERTY;
     void setSRGB(bool value) SWIFT_COMPUTED_PROPERTY;
-    
-    bool getLinear() const SWIFT_COMPUTED_PROPERTY;
-    void setLinear(bool value) SWIFT_COMPUTED_PROPERTY;
     
     bool getHDR() const SWIFT_COMPUTED_PROPERTY;
     void setHDR(bool value) SWIFT_COMPUTED_PROPERTY;
