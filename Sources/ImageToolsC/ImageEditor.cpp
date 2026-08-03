@@ -42,6 +42,22 @@ ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path fn_noesc
 }
 
 
+ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
+    auto image = ImageContainer::load(buffer, bufferSize, assumedColorProfile, assumeSRGB, error);
+    if (image == nullptr) {
+        return nullptr;
+    }
+    
+    // Create an editor
+    auto editor = ImageEditor::create(image);
+    
+    // Clean up
+    ImageContainerRelease(image);
+    
+    return editor;
+}
+
+
 void ImageEditor::edit(ImageContainer* fn_nonnull image) {
     if (_image == image) {
         return;

@@ -599,16 +599,18 @@ static const char* fn_nonnull _getName(const char* fn_nonnull path) {
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
     auto error = TGAError();
     
-    auto isTGA = TGAImage::isTGA(path, &error);
+    auto tgaSource = info.usePath ? TGASource(info.path) : TGASource(info.buffer, info.bufferSize);
+    
+    auto isTGA = TGAImage::isTGA(tgaSource, &error);
     if (isTGA == false) {
         // TODO: Describe error
         return nullptr;
     }
     
-    auto tga = TGAImage::load(path, &error);
+    auto tga = TGAImage::load(tgaSource, &error);
     if (tga == nullptr) {
         // TODO: Describe error
         return nullptr;
@@ -631,24 +633,49 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const char* fn_nonnull p
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadJPEG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
-    auto isJPEG = checkIfJPEG(path);
+ImageContainer* fn_nullable ImageContainer::_tryLoadJPEG(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
+    auto isJPEG = info.usePath ? checkIfJPEG(info.path) : checkIfJPEG(info.buffer, info.bufferSize);
     if (isJPEG == false) {
         return nullptr;
     }
     
-    auto jpeg = JPEGImage::load(path);
+    auto jpeg = info.usePath ? JPEGImage::load(info.path) : JPEGImage::load(info.buffer, info.bufferSize);
     if (jpeg == nullptr) {
         return nullptr;
     }
     
     // Extract jpeg image contents
+    auto width = jpeg->getWidth();
+    auto height = jpeg->getHeight();
+    auto componentType = PixelComponentType::uint8;
+    if (jpeg->getNumComponentBytes() == 2) {
+        componentType = PixelComponentType::float16;
+    }
+    else if (jpeg->getNumComponentBytes() == 4) {
+        componentType = PixelComponentType::float32;
+    }
+    auto pixelFormat = ImagePixelFormat(componentType, jpeg->getNumComponents());
+    auto contentsSize = width * height * pixelFormat.getSize();
+    auto contents = new char [contentsSize];
+    std::memcpy(contents, jpeg->getContents(), contentsSize);
+    auto image = new ImageContainer(pixelFormat, LCMSColorProfileRetain(assumedColorProfile), assumeSRGB, false, contents, width, height, 1);
     
-    return nullptr;
+    // Clean up
+    JPEGImageRelease(jpeg);
+    
+    return image;
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
+    // Loading png from a buffer is not yet supported
+    if (info.usePath == false) {
+        printf("Loading png from a buffer is not yet supported\n");
+        return nullptr;
+    }
+    
+    auto path = info.path;
+    
     auto isPng = PNGImage::checkIfPNG(path);
     if (isPng == false) {
         return nullptr;
@@ -765,7 +792,14 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const char* fn_nonnull p
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnull path fn_noescape) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
+    // Loading exr from a buffer is not yet supported
+    if (info.usePath == false) {
+        printf("Loading exr from a buffer is not yet supported\n");
+        return nullptr;
+    }
+    
+    auto path = info.path;
     // Check if it's an EXR file
     if (IsEXR(path) != TINYEXR_SUCCESS) {
         return nullptr;
@@ -839,13 +873,13 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const char* fn_nonnu
 }
 
 
-ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) {
+ImageContainer* fn_nullable ImageContainer::_load(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
     // Get image name
-    auto imageName = _getName(path);
+    auto imageName = info.usePath ? _getName(info.path) : "-mem-";
     
     // Try to load as a TGA image
     {
-        auto tga = _tryLoadTGA(path);
+        auto tga = _tryLoadTGA(info);
         if (tga) {
             //tga->_sRGBToLinear(true);
             //tga->_linearToSRGB(true);
@@ -856,7 +890,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     
     // Try to load as a JPEG image
     {
-        auto jpeg = _tryLoadJPEG(path);
+        auto jpeg = _tryLoadJPEG(info, assumedColorProfile, assumeSRGB);
         if (jpeg) {
             printf("Image \"%s\" is loaded using JPEGTurbo - %ld bytes per component\n", imageName, jpeg->_pixelFormat.getComponentSize());
             return jpeg;
@@ -865,7 +899,7 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     
     // Try to load as a PNG image
     {
-        auto png = _tryLoadPNG(path);
+        auto png = _tryLoadPNG(info);
         if (png) {
             printf("Image \"%s\" is loaded using LibPNG - %ld bytes per component\n", imageName, png->_pixelFormat.getComponentSize());
             return png;
@@ -874,20 +908,38 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     
     // Try to load as an OpenEXR image
     {
-        auto exr = _tryLoadOpenEXR(path);
+        auto exr = _tryLoadOpenEXR(info);
         if (exr) {
             printf("Image \"%s\" is loaded using tinyexr - %ld bytes per component\n", imageName, exr->_pixelFormat.getComponentSize());
             return exr;
         }
     }
     
+    // Fallback to stb image
+    
+    // Prepare variables
+    const stbi_uc* stbiBuffer = nullptr;
+    int stbiBufferSize = 0;
+    if (info.usePath == false) {
+        stbiBuffer = reinterpret_cast<const stbi_uc*>(info.buffer);
+        stbiBufferSize = static_cast<int>(info.bufferSize);
+    }
+    
     // Assumptions
     auto sRGB = assumeSRGB;
     auto isHdr = false;
+    auto is16Bit = false;
     
     // Use stb_image to try to load the image
-    auto is16Bit = stbi_is_16_bit(path);
-    isHdr = stbi_is_hdr(path);
+    if (info.usePath) {
+        is16Bit = stbi_is_16_bit(info.path);
+        isHdr = stbi_is_hdr(info.path);
+    }
+    else {
+        is16Bit = stbi_is_16_bit_from_memory(stbiBuffer, stbiBufferSize);
+        isHdr = stbi_is_hdr_from_memory(stbiBuffer, stbiBufferSize);
+    }
+    
     if (isHdr) {
         sRGB = false;
         is16Bit = true;
@@ -896,7 +948,13 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     int width = 0;
     int height = 0;
     int numComponents = 0;
-    auto components = stbi_loadf(path, &width, &height, &numComponents, 0);
+    float* components = nullptr;
+    if (info.usePath) {
+        components = stbi_loadf(info.path, &width, &height, &numComponents, 0);
+    }
+    else {
+        components = stbi_loadf_from_memory(stbiBuffer, stbiBufferSize, &width, &height, &numComponents, 0);
+    }
     if (components == nullptr) {
         auto reason = stbi_failure_reason();
         if (reason) {
@@ -942,6 +1000,25 @@ ImageContainer* fn_nullable ImageContainer::load(const char* fn_nullable path fn
     
     printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
     return new ImageContainer(pixelFormat, colorProfile, sRGB, isHdr, contents, width, height, 1);
+}
+
+
+ImageContainer* fn_nullable ImageContainer::load(const char* fn_nonnull path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
+    auto info = _LoadInfo {
+        .usePath = true,
+        .path = path
+    };
+    return _load(info, assumedColorProfile, assumeSRGB, error);
+}
+
+
+ImageContainer* fn_nullable ImageContainer::load(const void* fn_nonnull buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
+    auto info = _LoadInfo {
+        .usePath = false,
+        .buffer = buffer,
+        .bufferSize = bufferSize
+    };
+    return _load(info, assumedColorProfile, assumeSRGB, error);
 }
 
 
@@ -1841,14 +1918,14 @@ ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockS
     auto linear = _colorProfile == nullptr && _sRGB == false;
     auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
     if (rawImage == nullptr) {
-        printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
+        //printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
         return nullptr;
     }
     
     // Compress image
     auto astcImage = rawImage->compress(blockSize, quality, error, userInfo, progressCallback);
     if (rawImage == nullptr) {
-        printf("Could not compress an ASTCRawImage: %s\n", error.getErrorMessage());
+        //printf("Could not compress an ASTCRawImage: %s\n", error.getErrorMessage());
         ASTCRawImageRelease(rawImage);
         return nullptr;
     }

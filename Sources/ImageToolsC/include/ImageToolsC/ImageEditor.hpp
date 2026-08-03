@@ -30,7 +30,8 @@ private:
 public:
     static ImageEditor* fn_nonnull create(ImageContainer* fn_nonnull image) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
     
-    static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(_:_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(path:_:_:_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nullable load(const char* fn_nullable buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(buffer:size:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     void edit(ImageContainer* fn_nonnull image);
     

@@ -47,7 +47,25 @@ public extension ImageContainer {
     static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageContainer {
         var error = ImageToolsError()
         let image: ImageContainer? = path.withCString { cString in
-            ImageContainer.__loadUnsafe(cString, assumedColorProfile, assumeSRGB, &error)
+            ImageContainer.__loadUnsafe(path: cString, assumedColorProfile, assumeSRGB, &error)
+        }
+        guard let image else {
+            throw error
+        }
+        
+        return image
+    }
+    
+    
+    /// Loads an image from a path.
+    ///
+    /// - Parameter path: Path to load image from.
+    /// - Parameter assumeSRGB: Assume the color profile to be sRGB if it could not be determined during the image loading process.
+    static func load(data: Data, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageContainer {
+        var error = ImageToolsError()
+        let image: ImageContainer? = data.withUnsafeBytes { pointer in
+            guard let baseAddress = pointer.baseAddress else { return nil }
+            return ImageContainer.__loadUnsafe(buffer: baseAddress, size: data.count, assumedColorProfile, assumeSRGB, &error)
         }
         guard let image else {
             throw error
@@ -58,8 +76,15 @@ public extension ImageContainer {
     
     
     static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) async throws -> sending ImageContainer {
-        try await Task {
+        try await Task { @concurrent in
             return try ImageContainer.load(path: path, assumedColorProfile: assumedColorProfile, assumeSRGB: assumeSRGB)
+        }.value
+    }
+    
+    
+    static func load(data: Data, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) async throws -> sending ImageContainer {
+        try await Task { @concurrent in
+            return try ImageContainer.load(data: data, assumedColorProfile: assumedColorProfile, assumeSRGB: assumeSRGB)
         }.value
     }
 }

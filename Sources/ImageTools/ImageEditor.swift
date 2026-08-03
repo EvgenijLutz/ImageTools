@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 02.12.25.
 //
 
+import Foundation
 import ImageToolsC
 
 
@@ -13,7 +14,21 @@ public extension ImageEditor {
     static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageEditor {
         var error = ImageToolsError()
         let image: ImageEditor? = path.withCString { cString in
-            ImageEditor.__loadUnsafe(cString, assumedColorProfile, assumeSRGB, &error)
+            ImageEditor.__loadUnsafe(path: cString, assumedColorProfile, assumeSRGB, &error)
+        }
+        guard let image else {
+            throw error
+        }
+        
+        return image
+    }
+    
+    
+    static func load(data: Data, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageEditor {
+        var error = ImageToolsError()
+        let image: ImageEditor? = data.withUnsafeBytes { pointer in
+            guard let baseAddress = pointer.baseAddress else { return nil }
+            return ImageEditor.__loadUnsafe(buffer: baseAddress, size: data.count, assumedColorProfile, assumeSRGB, &error)
         }
         guard let image else {
             throw error

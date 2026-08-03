@@ -13,14 +13,51 @@ import ASTCEncoder
 import LittleCMS
 
 
+public struct ImageConversionProfile: Sendable, Hashable {
+    var numChannels: Int?
+    
+    /// Tells the importer how to treat the imported image's colour space.
+    ///
+    /// Available options:
+    /// - `nil`: Let the importer decide whether it's sRGB or not.
+    /// - `true`: force sRGB even if the importer determined other colour space.
+    /// - `false`: force linear colour space.
+    var forceSRGB: Bool?
+    
+    /// Forces colour conversion from sRGB to linear colour space.
+    var forceSRGBToLinear: Bool
+    
+    /// Forces colour conversion from linear to sRGB colour space.
+    var forceLinearToSRGB: Bool
+    
+    /// Converts colours to DCI P3 colour space with sRGB colour transfer function.
+    var convertToDCIP3D65: Bool
+    
+    /// Usable for ASTC texture compression.
+    var containsAlpha: Bool?
+    
+    
+    public init(numChannels: Int? = nil, forceSRGB: Bool? = nil, forceSRGBToLinear: Bool = false, forceLinearToSRGB: Bool = false, convertToDCIP3D65: Bool = false, containsAlpha: Bool? = nil) {
+        self.numChannels = numChannels
+        self.forceSRGB = forceSRGB
+        self.forceSRGBToLinear = forceSRGBToLinear
+        self.forceLinearToSRGB = forceLinearToSRGB
+        self.convertToDCIP3D65 = convertToDCIP3D65
+        self.containsAlpha = containsAlpha
+    }
+}
+
+
 public struct TestImage: Identifiable, Sendable, Hashable {
     public let id = UUID()
     public let name: String
     public let path: String
+    public let conversionProfile: ImageConversionProfile
     
-    public init(name: String, path: String) {
+    public init(name: String, path: String, conversionProfile: ImageConversionProfile = .init()) {
         self.name = name
         self.path = path
+        self.conversionProfile = conversionProfile
     }
 }
 
@@ -413,7 +450,12 @@ public struct ImageToolsPlaygroundView: View {
     
     public init(_ imageList: [TestImage], imagesGeneratorFunc: CGImageGeneratorFunc? = nil) {
         self.imageList = imageList
-        self.selectedTestImage = imageList.last
+        if imageList.count > 4 {
+            self.selectedTestImage = imageList[imageList.count - 4]
+        }
+        else {
+            self.selectedTestImage = imageList.last
+        }
         self.imagesGeneratorFunc = imagesGeneratorFunc
     }
     
