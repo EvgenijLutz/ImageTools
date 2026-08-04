@@ -668,20 +668,12 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadJPEG(const _LoadInfo& info f
 
 
 ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
-    // Loading png from a buffer is not yet supported
-    if (info.usePath == false) {
-        printf("Loading png from a buffer is not yet supported\n");
-        return nullptr;
-    }
-    
-    auto path = info.path;
-    
-    auto isPng = PNGImage::checkIfPNG(path);
+    auto isPng = info.usePath ? PNGImage::checkIfPNG(info.path) : PNGImage::checkIfPNG(info.buffer, info.bufferSize);
     if (isPng == false) {
         return nullptr;
     }
     
-    auto png = PNGImage::open(path);
+    auto png = info.usePath ? PNGImage::open(info.path) : PNGImage::open(info.buffer, info.bufferSize);
     if (png == nullptr) {
         return nullptr;
     }
@@ -793,21 +785,19 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const _LoadInfo& info fn
 
 
 ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
-    // Loading exr from a buffer is not yet supported
-    if (info.usePath == false) {
-        printf("Loading exr from a buffer is not yet supported\n");
-        return nullptr;
-    }
-    
     auto path = info.path;
+    auto buffer = reinterpret_cast<const unsigned char*>(info.buffer);
+    auto bufferSize = info.bufferSize;
+    
     // Check if it's an EXR file
-    if (IsEXR(path) != TINYEXR_SUCCESS) {
+    auto isEXRResult = info.usePath ? IsEXR(path) : IsEXRFromMemory(buffer, bufferSize);
+    if (isEXRResult != TINYEXR_SUCCESS) {
         return nullptr;
     }
     
     // Get EXR version
     EXRVersion version;
-    auto result = ParseEXRVersionFromFile(&version, path);
+    auto result = info.usePath ? ParseEXRVersionFromFile(&version, path) : ParseEXRVersionFromMemory(&version, buffer, bufferSize);
     if (result != TINYEXR_SUCCESS) {
         printf("Could not parse EXR version\n");
         return nullptr;
@@ -816,7 +806,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& inf
     // Get EXR header
     EXRHeader header;
     const char* err = nullptr;
-    result = ParseEXRHeaderFromFile(&header, &version, path, &err);
+    result = info.usePath ? ParseEXRHeaderFromFile(&header, &version, path, &err) : ParseEXRHeaderFromMemory(&header, &version, buffer, bufferSize, &err);
     if (result != TINYEXR_SUCCESS) {
         if (err) {
             fprintf(stderr, "ERR : %s\n", err);
@@ -831,7 +821,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& inf
     int width = 0;
     int height = 0;
     int depth = 1;
-    result = LoadEXR(&exrContents, &width, &height, path, &err);
+    result = info.usePath ? LoadEXR(&exrContents, &width, &height, path, &err) : LoadEXRFromMemory(&exrContents, &width, &height, buffer, bufferSize, &err);
     if (result != TINYEXR_SUCCESS) {
         if (err) {
             fprintf(stderr, "ERR : %s\n", err);
@@ -878,42 +868,28 @@ ImageContainer* fn_nullable ImageContainer::_load(const _LoadInfo& info fn_noesc
     auto imageName = info.usePath ? _getName(info.path) : "-mem-";
     
     // Try to load as a TGA image
-    {
-        auto tga = _tryLoadTGA(info);
-        if (tga) {
-            //tga->_sRGBToLinear(true);
-            //tga->_linearToSRGB(true);
-            printf("Image \"%s\" is loaded using FastTGA - %ld bytes per component\n", imageName, tga->_pixelFormat.getComponentSize());
-            return tga;
-        }
-    }
+    { if (auto tga = _tryLoadTGA(info)) {
+        printf("Image \"%s\" is loaded using FastTGA - %ld bytes per component\n", imageName, tga->_pixelFormat.getComponentSize());
+        return tga;
+    } }
     
     // Try to load as a JPEG image
-    {
-        auto jpeg = _tryLoadJPEG(info, assumedColorProfile, assumeSRGB);
-        if (jpeg) {
-            printf("Image \"%s\" is loaded using JPEGTurbo - %ld bytes per component\n", imageName, jpeg->_pixelFormat.getComponentSize());
-            return jpeg;
-        }
-    }
+    { if (auto jpeg = _tryLoadJPEG(info, assumedColorProfile, assumeSRGB)) {
+        printf("Image \"%s\" is loaded using JPEGTurbo - %ld bytes per component\n", imageName, jpeg->_pixelFormat.getComponentSize());
+        return jpeg;
+    } }
     
     // Try to load as a PNG image
-    {
-        auto png = _tryLoadPNG(info);
-        if (png) {
-            printf("Image \"%s\" is loaded using LibPNG - %ld bytes per component\n", imageName, png->_pixelFormat.getComponentSize());
-            return png;
-        }
-    }
+    { if (auto png = _tryLoadPNG(info)) {
+        printf("Image \"%s\" is loaded using LibPNG - %ld bytes per component\n", imageName, png->_pixelFormat.getComponentSize());
+        return png;
+    } }
     
     // Try to load as an OpenEXR image
-    {
-        auto exr = _tryLoadOpenEXR(info);
-        if (exr) {
-            printf("Image \"%s\" is loaded using tinyexr - %ld bytes per component\n", imageName, exr->_pixelFormat.getComponentSize());
-            return exr;
-        }
-    }
+    { if (auto exr = _tryLoadOpenEXR(info)) {
+        printf("Image \"%s\" is loaded using tinyexr - %ld bytes per component\n", imageName, exr->_pixelFormat.getComponentSize());
+        return exr;
+    } }
     
     // Fallback to stb image
     

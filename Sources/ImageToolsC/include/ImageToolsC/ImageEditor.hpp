@@ -48,6 +48,8 @@ public:
     bool getHDR() const SWIFT_COMPUTED_PROPERTY;
     void setHDR(bool value) SWIFT_COMPUTED_PROPERTY;
     
+    bool getLinear() SWIFT_COMPUTED_PROPERTY;
+    
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY;
     void setComponentType(PixelComponentType componentType);
     bool setNumComponents(long numComponents, float fill, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__setNumComponentsUnsafe(_:fill:error:));

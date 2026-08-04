@@ -206,6 +206,7 @@ public:
     LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     bool getSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
+    bool getLinear() SWIFT_COMPUTED_PROPERTY { return _colorProfile == nullptr && _sRGB == false; }
     
     const char* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.getSize(); }

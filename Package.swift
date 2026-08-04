@@ -9,7 +9,8 @@ let dependencies: [Package.Dependency] = {
     [
         .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: .init(1, 1, 0)),
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: .init(3, 2, 0)),
-        .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 56)),
+        //.package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: .init(1, 6, 56)),
+        .package(url: "https://github.com/EvgenijLutz/LibPNG.git", exact: "1.6.58-rev1"),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: .init(2, 18, 0)),
         .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: .init(5, 4, 0)),
     ]

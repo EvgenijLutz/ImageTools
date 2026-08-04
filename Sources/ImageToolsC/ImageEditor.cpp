@@ -109,6 +109,11 @@ void ImageEditor::setHDR(bool value) {
 }
 
 
+bool ImageEditor::getLinear() SWIFT_COMPUTED_PROPERTY {
+    return _image->_colorProfile == nullptr && _image->_sRGB == false;
+}
+
+
 ImagePixelFormat ImageEditor::getPixelFormat() SWIFT_COMPUTED_PROPERTY {
     return _image->_pixelFormat;
 }
