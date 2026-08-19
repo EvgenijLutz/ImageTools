@@ -38,7 +38,7 @@ public extension ImageContainer {
             
             let cgColorProfile: CGColorSpace = try {
                 // Check if there is iCC profile
-                if let colorProfile = colorProfile?.colorSpace {
+                if let colorProfile = colorProfile?.cgColorSpace {
                     if hdr {
                         if let extendedColorProfile = CGColorSpaceCreateExtended(colorProfile) {
                             return extendedColorProfile

@@ -5,12 +5,13 @@
 //  Created by Evgenij Lutz on 28.01.26.
 //
 
-#if canImport(SwiftUI)
+#if canImport(SwiftUI) && (os(macOS) || os(iOS))
 
 import SwiftUI
 import LibPNG
 import ASTCEncoder
 import LittleCMS
+import Synchronization
 
 
 public struct ImageConversionProfile: Sendable, Hashable {
@@ -159,16 +160,16 @@ func testColorSpaceConversion(path: String) async throws -> CGImage {
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 func testCompression(path: String,
-                      blockSize: ASTCBlockSize,
-                      quality: Float,
-                      progressCallback: @Sendable (_ progress: Float) -> Void = { _ in }
+                     blockSize: ASTCBlockSize,
+                     quality: Float,
+                     progressCallback: @Sendable (_ progress: Float, _ info: ASTCImageEncoderContext) -> Void = { _, _ in }
 ) async throws -> [CGImage] {
     let image = try await ImageContainer.load(path: path)
     //let resampled = image.createResampled(.lanczos, quality: 3, width: image.width / 2, height: image.height / 2, depth: image.depth / 2)
     //let astc = try resampled.createASTCCompressed(blockSize: blockSize, quality: quality, ldrAlpha: true, progressCallback)
     let astc = try image.createASTCCompressed(blockSize: blockSize, quality: quality, containsAlpha: true, ldrAlpha: true, normalMap: false, progressCallback)
     let decompressedImage = try astc.decompress()
-    return try [decompressedImage.createCgImage(colorSpace: image.colorProfile?.colorSpace)]
+    return try [decompressedImage.createCgImage(colorSpace: image.colorProfile?.cgColorSpace)]
 }
 
 
@@ -305,13 +306,13 @@ func testCompressedMips(path: String,
                                                    containsAlpha: containsAlpha,
                                                    ldrAlpha: ldrAlpha,
                                                    normalMap: normalMap
-        ) { compressionProgress in
+        ) { compressionProgress, _ in
             notifyProgress(currentCompressionProgress: 0.5 + compressionProgress * 0.5)
         }
         
         // Save astc image - convert it to a CGImage for now
         let decompressedImage = try astc.decompress()
-        let cgImage = try decompressedImage.createCgImage(colorSpace: source.colorProfile?.colorSpace, assumeSRGB: assumeSRGB, hdr: image.hdr)
+        let cgImage = try decompressedImage.createCgImage(colorSpace: source.colorProfile?.cgColorSpace, assumeSRGB: assumeSRGB, hdr: image.hdr)
         images.append(cgImage)
         
         
@@ -362,7 +363,13 @@ func loadOriginalImage(path: String?) -> CGImage? {
 #if os(macOS)
     return NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
 #elseif os(iOS) || os(tvOS) || os(visionOS)
-    return UIImage(contentsOfFile: path)?.cgImage
+    guard let uiImage = UIImage(contentsOfFile: path) else {
+        return nil
+    }
+    if #available(iOS 17.0, *) {
+        print("UI image is hdr:", uiImage.isHighDynamicRange)
+    }
+    return uiImage.cgImage
 #endif
 }
 
@@ -373,7 +380,22 @@ extension Image {
         #if os(macOS)
         self.init(nsImage: .init(cgImage: cgImage, size: .zero))
         #elseif os(iOS) || os(tvOS) || os(visionOS)
-        self.init(uiImage: .init(cgImage: cgImage))
+        let uiImage = UIImage(cgImage: cgImage)
+        //let uiImage = UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+        if #available(iOS 18.0, *) {
+            print("-----")
+            print("bitsPerComponent:", cgImage.bitsPerComponent)
+            print("bitmapInfo:", cgImage.bitmapInfo)
+            print("colorSpace:", cgImage.colorSpace as Any)
+            print("CGImage headroom:", cgImage.contentHeadroom)
+            //if #available(iOS 26.0, *) {
+            //    print("calculatedContentHeadroom:", cgImage.calculatedContentHeadroom)
+            //}
+            print("UIImage HDR:", uiImage.isHighDynamicRange)
+            print("-----")
+        }
+        self.init(uiImage: uiImage)
+        //self.init(cgImage, scale: 1, label: Text("cock"))
         #endif
     }
 }
@@ -390,26 +412,114 @@ struct ConvertedImage: Identifiable {
 }
 
 
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 9.4, visionOS 1.0, *)
+@available(macOS 14.0, iOS 18.0, tvOS 18.0, watchOS 9.4, visionOS 1.0, *)
 struct CompressedImageViewer: View {
     var convertedImages: [ConvertedImage] = []
     var currentMipIndex: Int
     
     var body: some View {
         if currentMipIndex < convertedImages.count {
-            Image(cgImage: convertedImages[currentMipIndex].image)
-                .resizable()
-                .scaledToFit()
-                .allowedDynamicRange(.high)
+            HDRImageView(convertedImages[currentMipIndex].image)
         }
         
     }
 }
 
 
-public typealias CGImageGeneratorFunc = (_ imagePath: String) async throws -> [CGImage]
+@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 9.4, visionOS 1.0, *)
+public class ImageProvider: @unchecked Sendable {
+    private let locked = Mutex<Bool>(false)
+    
+    @MainActor
+    private var currentProgress: Float = 0
+    
+    public typealias Callback = @MainActor (_ images: [CGImage], _ progress: Float) -> Void
+    private let callback: Callback
+    
+    public init(_ callback: @escaping Callback = { _, _ in }) {
+        self.callback = callback
+    }
+    
+    public func accept(_ context: borrowing ASTCImageEncoderContext, profile: LCMSColorProfile?, hdr: Bool, progress: Float) {
+        scheduleIfNeeded(progress: progress) { [context = copy context] in
+            let astcImage = context.extractImage()
+            _accept(astcImage, profile: profile, hdr: hdr, progress: progress)
+        }
+    }
+    
+    
+    public func accept(_ images: [CGImage], progress: Float) {
+        scheduleIfNeeded(progress: progress) {
+            Task { @MainActor in
+                _finalise(images, progress: 1)
+            }
+        }
+    }
+    
+    
+    public func apply(_ images: [CGImage]) {
+        Task { @MainActor in
+            _finalise(images, progress: 1)
+        }
+    }
+    
+    
+    private func scheduleIfNeeded(progress: Float, action: () -> Void) {
+        let shouldAccept = locked.withLock { currentlyLocked in
+            if (currentlyLocked) {
+                return false
+            }
+            
+            currentlyLocked = true
+            return true
+        }
+        
+        if shouldAccept {
+            action()
+        }
+    }
+    
+    
+    private func _accept(_ astcImage: ASTCImage, profile: LCMSColorProfile?, hdr: Bool, progress: Float) {
+        Task { @concurrent in
+            do {
+                let uncompressedImage = try astcImage.decompress()
+                let cgImage = try uncompressedImage.createCgImage(colorSpace: profile?.cgColorSpace, hdr: hdr)
+                
+                await MainActor.run {
+                    _finalise([cgImage], progress: progress)
+                }
+            }
+            catch {
+                print(error)
+            }
+            
+            // Unlock
+            locked.withLock { value in
+                value = false
+            }
+        }
+    }
+    
+    
+    @MainActor
+    private func _finalise(_ images: [CGImage], progress: Float) {
+        if currentProgress > progress {
+            print("Reject obsolete progress: \(progress). Current is \(currentProgress)")
+            return
+        }
+        
+        currentProgress = progress
+        callback(images, progress)
+    }
+    
+}
 
-@available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 9.4, visionOS 1.0, *)
+
+@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 9.4, visionOS 1.0, *)
+public typealias CGImageGeneratorFunc = @Sendable (_ imagePath: String, _ blockSize: ASTCBlockSize, _ quality: ASTCCompressionQuality, _ provider: ImageProvider) async throws -> Void
+
+@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 9.4, visionOS 1.0, *)
 public struct ImageToolsPlaygroundView: View {
     let imageList: [TestImage]
     let imagesGeneratorFunc: CGImageGeneratorFunc?
@@ -450,12 +560,12 @@ public struct ImageToolsPlaygroundView: View {
     
     public init(_ imageList: [TestImage], imagesGeneratorFunc: CGImageGeneratorFunc? = nil) {
         self.imageList = imageList
-        if imageList.count > 4 {
-            self.selectedTestImage = imageList[imageList.count - 4]
-        }
-        else {
-            self.selectedTestImage = imageList.last
-        }
+//        if imageList.count > 4 {
+//            self.selectedTestImage = imageList[imageList.count - 4]
+//        }
+//        else {
+            self.selectedTestImage = imageList.first
+//        }
         self.imagesGeneratorFunc = imagesGeneratorFunc
     }
     
@@ -482,19 +592,21 @@ public struct ImageToolsPlaygroundView: View {
         
         //image = nil
         loadingProgress = 0
+        let imageProvider = ImageProvider { images, progress in
+            convertedImages = images.map { .init(image: $0) }
+            loadingProgress = progress
+        }
         
-        lastTask = Task {
+        // Get image path
+        guard let path = selectedTestImage?.path else {
+            return
+        }
+        
+        lastTask = Task { @concurrent in
             do {
-                // Get image path
-                guard let path = selectedTestImage?.path else {
-                    return
-                }
-                
                 // Get images using custom implementation
                 if let customFunc = customFunc {
-                    let images = try await customFunc(path)
-                    convertedImages = images.map { .init(image: $0) }
-                    loadingProgress = 1
+                    try await customFunc(path, selectedBlockOption.blockSize, selectedCompressionQuality.quality, imageProvider)
                     return
                 }
                 
@@ -504,24 +616,23 @@ public struct ImageToolsPlaygroundView: View {
                     blockSize: selectedBlockOption.blockSize,
                     quality: selectedCompressionQuality.quality
                 ) { progress in
-                    Task { @MainActor in
-                        loadingProgress = progress
-                    }
+                    imageProvider.accept([], progress: progress)
                 }
                 
                 try Task.checkCancellation()
                 
-                convertedImages = images.map { .init(image: $0) }
+                imageProvider.apply(images)
             }
             catch {
                 print(error)
             }
         }
+        
     }
     
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            VStack {
                 HStack {
                     Picker("Block size", selection: $selectedBlockOption) {
                         ForEach(block2DOptions) { option in
@@ -540,20 +651,10 @@ public struct ImageToolsPlaygroundView: View {
                     
                     //Toggle("Generate mips", isOn: .constant(true))
                     
-                    
-                    Button {
-                        testImageCompression()
-                    } label: {
-                        Text("Compress")
-                    }
-                    .buttonStyle(.bordered)
-                }
-                
-                if let imagesGeneratorFunc {
                     Button {
                         testImageCompression(imagesGeneratorFunc)
                     } label: {
-                        Text("Perform test")
+                        Text("Compress")
                     }
                     .buttonStyle(.bordered)
                 }
@@ -561,24 +662,17 @@ public struct ImageToolsPlaygroundView: View {
                 ProgressView(value: loadingProgress, total: 1)
                     .progressViewStyle(.linear)
                 
-                
                 VStack {
                     if convertedImages.isEmpty == false {
                         Picker(selection: $comparisonMode) {
-                            Text("Original")
-                                .tag(ImageComparisonMode.original)
-                            
-                            Text("Compressed")
-                                .tag(ImageComparisonMode.compressed)
-                            
-                            Text("Side by side")
-                                .tag(ImageComparisonMode.sideBySide)
+                            Text("Original").tag(ImageComparisonMode.original)
+                            Text("Compressed").tag(ImageComparisonMode.compressed)
+                            Text("Side by side").tag(ImageComparisonMode.sideBySide)
                         } label: {
                             Text("Comparison mode")
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
-                        
                         
                         if convertedImages.count > 1 {
                             Slider(value: $currentMipProgress, in: 0...1, step: progressStep)
@@ -587,54 +681,64 @@ public struct ImageToolsPlaygroundView: View {
                     }
                 }
                 .padding(.bottom, 8)
-
                 
-                switch comparisonMode {
-                case .original:
-                    if let sourceImage {
-                        Image(cgImage: sourceImage)
-                            .resizable()
-                            .scaledToFit()
-                            .allowedDynamicRange(.high)
-                    }
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
                     
-                case .compressed:
-                    CompressedImageViewer(convertedImages: convertedImages, currentMipIndex: currentStep)
-                    
-                case .sideBySide:
-                    HStack(spacing: 0) {
+                    switch comparisonMode {
+                    case .original:
                         if let sourceImage {
-                            Image(cgImage: sourceImage)
-                                .resizable()
-                                .scaledToFit()
-                                .allowedDynamicRange(.high)
+                            HDRImageView(sourceImage)
+                        }
+                        
+                    case .compressed:
+                        CompressedImageViewer(convertedImages: convertedImages, currentMipIndex: currentStep)
+                        
+                    case .sideBySide:
+                        if let sourceImage {
+                            HDRImageView(sourceImage)
                         }
                         
                         CompressedImageViewer(convertedImages: convertedImages, currentMipIndex: currentStep)
-                        
-                        Spacer(minLength: 0)
                     }
+                    
+                    Spacer(minLength: 0)
                 }
+                .allowedDynamicRange(.high)
                 
                 Spacer()
             }
             .toolbar {
-                Picker("Test image", selection: $selectedTestImage) {
-                    ForEach(imageList) { option in
-                        Text(option.name).tag(option)
+                Menu {
+                    Button {
+                        loadTestImage()
+                    } label: {
+                        Text("Reset")
                     }
-                }
-                .onChange(of: selectedTestImage) {
-                    loadTestImage()
-                }
-                
-                Button {
-                    loadTestImage()
+                    
+                    Divider()
+                    
+                    ForEach(imageList) { option in
+                        Button {
+                            selectedTestImage = option
+                            loadTestImage()
+                        } label: {
+                            //Text(option.name)
+                            
+                            if selectedTestImage == option {
+                                Label(option.name, systemImage: "checkmark")
+                            }
+                            else {
+                                Text(option.name)
+                            }
+                        }
+                    }
                 } label: {
-                    Text("Reset")
+                    Image(systemName: "gear")
                 }
-                .buttonStyle(.bordered)
             }
+            .navigationTitle("ASTC")
+            .toolbarTitleDisplayMode(.inlineLarge)
         }
         .task {
             //let profile = LCMSColorProfile.createSRGB()

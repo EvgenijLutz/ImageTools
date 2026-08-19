@@ -38,6 +38,7 @@ func withImageContainerCallback<T>(_ callback: ImageContainerCallback, action: (
 }
 
 
+
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ImageContainer {
     /// Loads an image from a path.
@@ -132,16 +133,17 @@ public extension ImageContainer {
                               containsAlpha: Bool,
                               ldrAlpha: Bool,
                               normalMap: Bool,
-                              _ progressCallback: ImageContainerCallback = { _ in }
+                              _ progressCallback: ASTCEncoderCallback = { _, _ in }
     ) throws -> ASTCImage {
-        return try withImageContainerCallback(progressCallback) { userInfo in
+        return try withASTCEncoderCallback(progressCallback) { userInfo in
             let image = __createASTCCompressedUnsafe(blockSize: blockSize,
                                                      quality: quality,
                                                      containsAlpha: containsAlpha,
                                                      ldrAlpha: ldrAlpha,
                                                      normalMap: normalMap,
-                                                     userInfo: userInfo,
-                                                     progressCallback: imageContainerCCallback)
+                                                     userInfo: userInfo) { userInfo, progress, info in
+                astcEncoderCCallback(userInfo, progress, info)
+            }
             
             guard let image else {
                 throw ImageToolsError.other("Could not compress to ASTC image")
