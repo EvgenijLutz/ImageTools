@@ -606,7 +606,10 @@ public struct ImageToolsPlaygroundView: View {
             do {
                 // Get images using custom implementation
                 if let customFunc = customFunc {
+                    let startTime = CACurrentMediaTime()
                     try await customFunc(path, selectedBlockOption.blockSize, selectedCompressionQuality.quality, imageProvider)
+                    let elapsed = CACurrentMediaTime() - startTime
+                    print("Image prcessing time: \(elapsed)s")
                     return
                 }
                 

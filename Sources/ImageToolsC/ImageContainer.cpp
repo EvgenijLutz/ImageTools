@@ -48,7 +48,7 @@ static inline void clamp_xyz(long& x, long width, long& y, long height, long& z,
 
 // MARK: - GetPixel
 
-static inline ImagePixel _getPixel_general(long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+static inline ImagePixel _getPixel_general(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
     auto pixel = ImagePixel();
     
     clamp_xyz(x, width, y, height, z, depth);
@@ -85,7 +85,7 @@ static inline ImagePixel _getPixel_general(long x, long y, long z, long width, l
 
 
 template <long numComponents>
-static inline Float16Pixel _getPixel_float16(long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+static inline Float16Pixel _getPixel_float16(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents) {
     auto pixel = Float16Pixel();
     
     clamp_xyz(x, width, y, height, z, depth);
@@ -111,7 +111,7 @@ static inline Float16Pixel _getPixel_float16(long x, long y, long z, long width,
 
 
 template <long numComponents>
-static inline ImagePixel _getPixel_float32(long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+static inline ImagePixel _getPixel_float32(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents) {
     auto pixel = ImagePixel();
     
     clamp_xyz(x, width, y, height, z, depth);
@@ -138,7 +138,7 @@ static inline ImagePixel _getPixel_float32(long x, long y, long z, long width, l
 
 // MARK: - SetPixel
 
-static inline void _setPixel_general(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+static inline void _setPixel_general(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
     if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
         return;
     }
@@ -174,7 +174,7 @@ static inline void _setPixel_general(ImagePixel pixel, long x, long y, long z, l
 
 
 template <long numComponents>
-static inline void _setPixel_float16(Float16Pixel pixel, long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+static inline void _setPixel_float16(Float16Pixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents) {
     if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
         return;
     }
@@ -198,7 +198,7 @@ static inline void _setPixel_float16(Float16Pixel pixel, long x, long y, long z,
 
 
 template <long numComponents>
-static inline void _setPixel_float32(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, char* fn_nonnull contents) {
+static inline void _setPixel_float32(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents) {
     if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
         return;
     }
@@ -221,11 +221,11 @@ static inline void _setPixel_float32(ImagePixel pixel, long x, long y, long z, l
 }
 
 
-static inline bool _convertColorProfile(LCMSColorProfile* fn_nullable colorProfile, LCMSColorProfile* fn_nullable sourceColorProfile, long width, long height, char* fn_nonnull contents, ImagePixelFormat pixelFormat, bool hdr) {
+static inline bool _convertColorProfile(LCMSColorProfile* fn_nullable colorProfile, LCMSColorProfile* fn_nullable sourceColorProfile, long width, long height, void* fn_nonnull contents, ImagePixelFormat pixelFormat, bool hdr) {
     // TODO: Create a noncopyable struct that stores LCMSImage with referenced image data to avoid unnecessary data copy
     // TODO: For instance, struct EphemeralLCMSImage { /* ... */ };
     // Create an image for colour conversion
-    auto cmsImage = LCMSImage::createBorrowing(contents,
+    auto cmsImage = LCMSImage::createBorrowing(reinterpret_cast<char*>(contents),
                                                width, height,
                                                pixelFormat.numComponents, pixelFormat.getComponentSize(),
                                                hdr,
@@ -277,7 +277,7 @@ static inline _Float16 _lanczos_float16(_Float16 x, _Float16 a) {
 
 // MARK: - Lanczos X
 
-static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     long left = floor(x - a + 1);
     long right = floor(x + a);
     auto sum = ImagePixel();
@@ -294,7 +294,7 @@ static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, floa
 }
 
 template<long numComponents>
-static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
     long left = floor(static_cast<float>(x - a + 1));
     long right = floor(static_cast<float>(x + a));
     auto sum = Float16Pixel();
@@ -311,7 +311,7 @@ static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Floa
 }
 
 template<long numComponents>
-static inline ImagePixel _sampleLanczosX_float32(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+static inline ImagePixel _sampleLanczosX_float32(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
     long left = floor(x - a + 1);
     long right = floor(x + a);
     auto sum = ImagePixel();
@@ -330,7 +330,7 @@ static inline ImagePixel _sampleLanczosX_float32(float x, float y, float z, floa
 
 // MARK: - Lanczos Y
 
-static inline ImagePixel _sampleLanczosY_general(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+static inline ImagePixel _sampleLanczosY_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     long left = floor(y - a + 1);
     long right = floor(y + a);
     auto sum = ImagePixel();
@@ -347,7 +347,7 @@ static inline ImagePixel _sampleLanczosY_general(float x, float y, float z, floa
 }
 
 template<long numComponents>
-static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
     long left = floor(static_cast<float>(y - a + 1));
     long right = floor(static_cast<float>(y + a));
     auto sum = Float16Pixel();
@@ -364,7 +364,7 @@ static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Floa
 }
 
 template<long numComponents>
-static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, bool renormalize) {
+static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
     long left = floor(y - a + 1);
     long right = floor(y + a);
     auto sum = ImagePixel();
@@ -383,7 +383,7 @@ static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, floa
 
 // MARK: - Lanczos Z
 
-static inline ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, char* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+static inline ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     long left = floor(z - a + 1);
     long right = floor(z + a);
     auto sum = ImagePixel();
@@ -528,7 +528,7 @@ ImageContainer* fn_nonnull ImageContainerCollection::get(long index) const SWIFT
 
 // MARK: - ImageContainer
 
-ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, char* fn_nonnull contents, long width, long height, long depth):
+ImageContainer::ImageContainer(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, std::byte* fn_nonnull contents, long width, long height, long depth):
 _referenceCounter(1),
 _pixelFormat(pixelFormat),
 _colorProfile(colorProfile),
@@ -544,7 +544,7 @@ _depth(depth) {
 
 ImageContainer::~ImageContainer() {
     if (_contents) {
-        delete [] _contents;
+        std::free(_contents);
     }
     
     LCMSColorProfileRelease(_colorProfile);
@@ -553,14 +553,14 @@ ImageContainer::~ImageContainer() {
 }
 
 
-ImageContainer* fn_nonnull ImageContainer::create(const char* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nonnull ImageContainer::create(const void* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED {
     auto size = width * height * pixelFormat.getSize();
-    auto buffer = new char[size];
+    auto buffer = std::malloc(size);
     std::memcpy(buffer, contents, size);
     
     return new ImageContainer(pixelFormat,
                               nullptr, false, false,
-                              buffer, width, height, 1);
+                              static_cast<std::byte*>(buffer), width, height, 1);
 }
 
 
@@ -568,18 +568,19 @@ ImageContainer* fn_nonnull ImageContainer::create(ImagePixelFormat pixelFormat, 
     width = std::max(1l, width);
     height = std::max(1l, height);
     depth = std::max(1l, depth);
-    auto contents = new char [width * height * depth * pixelFormat.getSize()];
-    return new ImageContainer(pixelFormat, LCMSColorProfileRetain(colorProfile), sRGB, hdr, contents, width, height, depth);
+    auto contentsSize = width * height * depth * pixelFormat.getSize();
+    auto contents = std::malloc(contentsSize);
+    return new ImageContainer(pixelFormat, LCMSColorProfileRetain(colorProfile), sRGB, hdr, static_cast<std::byte*>(contents), width, height, depth);
 }
 
 
 ImageContainer* fn_nonnull ImageContainer::createRGBA8Unorm(long width, long height) {
     auto pixelFormat = ImagePixelFormat::rgba8Unorm;
     auto contentsSize = width * height * 4;
-    auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
+    auto contents = std::malloc(contentsSize);
     std::memset(contents, 0xFF, contentsSize);
     
-    return new ImageContainer(pixelFormat, nullptr, true, false, contents, width, height, 1);
+    return new ImageContainer(pixelFormat, nullptr, true, false, static_cast<std::byte*>(contents), width, height, 1);
 }
 
 
@@ -599,7 +600,7 @@ static const char* fn_nonnull _getName(const char* fn_nonnull path) {
 }
 
 
-ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED {
+ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB) SWIFT_RETURNS_RETAINED {
     auto error = TGAError();
     
     auto tgaSource = info.usePath ? TGASource(info.path) : TGASource(info.buffer, info.bufferSize);
@@ -616,20 +617,26 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadTGA(const _LoadInfo& info fn
         return nullptr;
     }
     
-    auto numComponents = tga->getNumComponents();
-    auto pixelFormat = ImagePixelFormat(PixelComponentType::uint8, numComponents);
-    // Assume sRGB colour space
-    auto sRGB = true;
-    auto hdr = false;
-    auto contentsSize = tga->getSize();
-    auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
-    std::memcpy(contents, tga->getContents(), contentsSize);
     auto width = tga->getWidth();
     auto height = tga->getHeight();
+    auto numComponents = tga->getNumComponents();
+    auto pixelFormat = ImagePixelFormat(PixelComponentType::uint8, numComponents);
+    // Assume non-hdr since TGA does not support it
+    auto hdr = false;
+    
+    // Transfer contents to reduce memory footprint
+#if 1
+    auto contents = TGAImage::Unsafe::transferContentsOwnership(tga);
+#else
+    auto contentsSize = tga->getSize();
+    auto contents = std::malloc(contentsSize);
+    std::memcpy(contents, tga->getContents(), contentsSize);
+#endif
+    
     TGAImageRelease(tga);
     
     // Extract TGA image contents
-    return new ImageContainer(pixelFormat, nullptr, sRGB, hdr, contents, width, height, 1);
+    return new ImageContainer(pixelFormat, LCMSColorProfileRetain(assumedColorProfile), assumeSRGB, hdr, static_cast<std::byte*>(contents), width, height, 1);
 }
 
 
@@ -656,9 +663,9 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadJPEG(const _LoadInfo& info f
     }
     auto pixelFormat = ImagePixelFormat(componentType, jpeg->getNumComponents());
     auto contentsSize = width * height * pixelFormat.getSize();
-    auto contents = new char [contentsSize];
+    auto contents = std::malloc(contentsSize);
     std::memcpy(contents, jpeg->getContents(), contentsSize);
-    auto image = new ImageContainer(pixelFormat, LCMSColorProfileRetain(assumedColorProfile), assumeSRGB, false, contents, width, height, 1);
+    auto image = new ImageContainer(pixelFormat, LCMSColorProfileRetain(assumedColorProfile), assumeSRGB, false, static_cast<std::byte*>(contents), width, height, 1);
     
     // Clean up
     JPEGImageRelease(jpeg);
@@ -736,19 +743,46 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const _LoadInfo& info fn
     }
     
     
-    // Copy and convert image data
+    // Get image dimensions
     auto width = png->getWidth();
     auto height = png->getHeight();
     auto depth = 1;
-    auto contents = reinterpret_cast<char*>(std::malloc(width * height * numComponents * componentSize));
-    auto uint8Contents = reinterpret_cast<uint8_t*>(contents);
+    
+    
+    // Transfer image contents and colour profile ownership if it's a uint8 image
+    if (componentSize == 1) {
+        auto contents = PNGImage::Unsafe::transferContentsOwnership(png);
+        
+        // Clean up
+        PNGImageRelease(png);
+        
+        return new ImageContainer(pixelFormat, colorProfile, sRGB, false, static_cast<std::byte*>(contents), width, height, depth);
+    }
+    
+    
+    // Copy and convert image data
+    auto contents = std::malloc(width * height * numComponents * componentSize);
     auto uint16Contents = reinterpret_cast<_Float16*>(contents);
     std::memset(contents, 0xff, width * height * numComponents * componentSize);
     
     auto pngContents = png->getContents();
-    auto pngUint8Contents = reinterpret_cast<const uint8_t*>(pngContents);
     auto pngUint16Contents = reinterpret_cast<const PixelInfo<uint16_t, float>*>(pngContents);
     
+#if 1
+    if (componentSize == 2) {
+        auto rowComponents = width * numComponents;
+        CONCURRENT_LOOP_START(0, height, y) {
+            auto index = y * rowComponents;
+            auto color = uint16Contents + index;
+            auto pngColor = pngUint16Contents + index;
+            for (auto x = 0; x < rowComponents; x++) {
+                color[x] = pngColor[x].convert(false);
+            }
+        } CONCURRENT_LOOP_END
+    }
+#else
+    auto uint8Contents = reinterpret_cast<uint8_t*>(contents);
+    auto pngUint8Contents = reinterpret_cast<const uint8_t*>(pngContents);
     for (auto y = 0; y < height; y++) {
         for (auto x = 0; x < width; x++) {
             auto index = (y * width + x) * numComponents;
@@ -776,11 +810,12 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadPNG(const _LoadInfo& info fn
             }
         }
     }
+#endif
     
     // Clean up
     PNGImageRelease(png);
     
-    return new ImageContainer(pixelFormat, colorProfile, sRGB, false, contents, width, height, depth);
+    return new ImageContainer(pixelFormat, colorProfile, sRGB, false, static_cast<std::byte*>(contents), width, height, depth);
 }
 
 
@@ -832,9 +867,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& inf
     }
     
     // Cast image data to float16
-    //auto imageContents = new _Float16[width * height * header.num_channels];
-    //auto contents = reinterpret_cast<char*>(imageContents);
-    auto contents = new char[width * height * header.num_channels * sizeof(_Float16)];
+    auto contents = std::malloc(width * height * header.num_channels * sizeof(_Float16));
     auto imageContents = reinterpret_cast<_Float16*>(contents);
     for (auto y = 0; y < height; y++) {
         for (auto x = 0; x < width; x++) {
@@ -853,7 +886,7 @@ ImageContainer* fn_nullable ImageContainer::_tryLoadOpenEXR(const _LoadInfo& inf
     auto rec709 = LCMSColorProfile::createRec709();
     
     // Create container
-    auto container = new ImageContainer(pixelFormat, rec709, false, true, contents, width, height, depth);
+    auto container = new ImageContainer(pixelFormat, rec709, false, true, static_cast<std::byte*>(contents), width, height, depth);
     
     // Clean up
     std::free(exrContents);
@@ -868,7 +901,7 @@ ImageContainer* fn_nullable ImageContainer::_load(const _LoadInfo& info fn_noesc
     auto imageName = info.usePath ? _getName(info.path) : "-mem-";
     
     // Try to load as a TGA image
-    { if (auto tga = _tryLoadTGA(info)) {
+    { if (auto tga = _tryLoadTGA(info, assumedColorProfile, assumeSRGB)) {
         printf("Image \"%s\" is loaded using FastTGA - %ld bytes per component\n", imageName, tga->_pixelFormat.getComponentSize());
         return tga;
     } }
@@ -946,7 +979,7 @@ ImageContainer* fn_nullable ImageContainer::_load(const _LoadInfo& info fn_noesc
     
     // Copy pixel information
     auto contentsSize = width * height * numComponents * (is16Bit ? 2 : 1);
-    auto contents = reinterpret_cast<char*>(std::malloc(contentsSize));
+    auto contents = std::malloc(contentsSize);
     std::memset(contents, 0xff, contentsSize);
     auto ucharComponents = reinterpret_cast<unsigned char*>(contents);
     auto halfComponents = reinterpret_cast<_Float16*>(contents);
@@ -975,7 +1008,7 @@ ImageContainer* fn_nullable ImageContainer::_load(const _LoadInfo& info fn_noesc
     LCMSColorProfile* fn_nullable colorProfile = LCMSColorProfileRetain(assumedColorProfile);
     
     printf("Image \"%s\" is loaded using stb_image - %ld bytes per component\n", imageName, pixelFormat.getComponentSize());
-    return new ImageContainer(pixelFormat, colorProfile, sRGB, isHdr, contents, width, height, 1);
+    return new ImageContainer(pixelFormat, colorProfile, sRGB, isHdr, static_cast<std::byte*>(contents), width, height, 1);
 }
 
 
@@ -995,6 +1028,110 @@ ImageContainer* fn_nullable ImageContainer::load(const void* fn_nonnull buffer f
         .bufferSize = bufferSize
     };
     return _load(info, assumedColorProfile, assumeSRGB, error);
+}
+
+
+long ImageContainer::writePNG(const char* fn_nonnull path, float compressionLevel) {
+    // Get ICC profile data
+    char* iccData = nullptr;
+    long iccDataLength = 0;
+    if (_colorProfile) {
+        iccDataLength = _colorProfile->getSize();
+        iccData = reinterpret_cast<char*>(std::malloc(iccDataLength));
+        std::memcpy(iccData, _colorProfile->getData(), iccDataLength);
+    }
+    
+    // Output component size
+    auto componentSize = _pixelFormat.getComponentSize();
+    
+    // Prepare image contents
+    std::byte* pngContents = nullptr;
+    if (_pixelFormat.componentType == PixelComponentType::uint8) {
+        // Nothing needs to be converted - pass contents as is
+        pngContents = _contents;
+    }
+    else {
+        // Pixels need to be converted to 16-bit integer values with big-endian byte order
+        componentSize = 2;
+        auto componentsPerRow = _width * _pixelFormat.numComponents;
+        auto rowSize = componentsPerRow * componentSize;
+        auto bufferSize = rowSize * _height;
+        pngContents = static_cast<std::byte*>(std::malloc(bufferSize));
+        
+        union ComponentInfo {
+            uint8_t bytes[2];
+            uint16_t uintValue;
+            _Float16 halfValue;
+            
+            void set(_Float16 value) {
+                auto promotedValue = static_cast<float>(value) * 65535.0f;
+                //if (promotedValue > 65535.0f) {
+                //    promotedValue = 65535.0f;
+                //}
+                uintValue = static_cast<uint16_t>(promotedValue);
+                std::swap(bytes[0], bytes[1]);
+            }
+        };
+        static_assert(sizeof(ComponentInfo) == 2, "Size of ComponentInfo should be 2 bytes");
+        auto pixelBuffer = reinterpret_cast<ComponentInfo*>(pngContents);
+        
+        if (_pixelFormat.componentType == PixelComponentType::float16) {
+            // Copy and convert directly in-place
+            std::memcpy(pngContents, _contents, bufferSize);
+            
+            // TODO: Convert to rec709 if hdr
+            // ...
+            
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto row = pixelBuffer + componentsPerRow * y;
+                for (auto x = 0; x < componentsPerRow; x++) {
+                    auto pixel = row[x];
+                    pixel.set(pixel.halfValue);
+                    row[x] = pixel;
+                }
+            } CONCURRENT_LOOP_END
+        }
+        else if (_pixelFormat.componentType == PixelComponentType::float32) {
+            auto source = reinterpret_cast<float*>(_contents);
+            // Quantize
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto sourceRow = source + componentsPerRow * y;
+                auto row = pixelBuffer + componentsPerRow * y;
+                for (auto x = 0; x < componentsPerRow; x++) {
+                    auto value = static_cast<_Float16>(sourceRow[x]);
+                    
+                    // TODO: Convert to rec709 if hdr
+                    // ...
+                    
+                    row[x].set(value);
+                }
+            } CONCURRENT_LOOP_END
+        }
+        else {
+            // Unsupported format
+            std::free(pngContents);
+            std::free(iccData);
+            return -1;
+        }
+    }
+    
+    // Compress and save a png file
+    auto pngImage = PNGImage::createTransferring(pngContents, false, _width, _height, _pixelFormat.numComponents, componentSize * 8, _sRGB, -1, iccData, false, iccDataLength);
+    auto result = pngImage->write(path, compressionLevel);
+    PNGImageRelease(pngImage);
+    
+    // Release image contents if needed
+    if (pngContents != _contents) {
+        std::free(pngContents);
+        pngContents = nullptr;
+    }
+    // Release colour profile if needed
+    if (iccData) {
+        std::free(iccData);
+        iccData = nullptr;
+    }
+    
+    return result;
 }
 
 
@@ -1038,11 +1175,11 @@ void ImageContainer::_setComponentType(PixelComponentType componentType) {
     //auto sourcePixelSize = _pixelFormat.getSize();
     auto destinationPixelSize = _pixelFormat.numComponents * getPixelComponentTypeSize(componentType);
     auto newSize = _width * _height * _depth * destinationPixelSize;
-    auto newContents = reinterpret_cast<char*>(std::malloc(newSize));
+    auto newContents = static_cast<std::byte*>(std::malloc(newSize));
     //memset(newContents, 0xFF, newSize);
     
     union Content {
-        char* contents;
+        std::byte* contents;
         uint8_t* uint8;
         _Float16* float16;
         float* float32;
@@ -1095,7 +1232,12 @@ void ImageContainer::_setComponentType(PixelComponentType componentType) {
                     constexpr auto _min = static_cast<_Float16>(0);
                     constexpr auto _max = static_cast<_Float16>(255);
                     auto value = std::clamp(*srcValue * _max, _min, _max);
-                    *dstValue = static_cast<uint8_t>(value);
+                    
+                    // Looks loke roundf or ceilf preserve the colour accuracy the best
+                    //*dstValue = static_cast<uint8_t>(value);
+                    *dstValue = static_cast<uint8_t>(roundf(value));
+                    //*dstValue = static_cast<uint8_t>(ceilf(value));
+                    
                     //const auto fpMax = static_cast<_Float16>(255);
                     //auto value = std::min(fpMax, static_cast<_Float16>(*srcValue * 255));
                     //*dstValue = static_cast<uint8_t>(std::max(static_cast<_Float16>(0), value));
@@ -1131,7 +1273,8 @@ void ImageContainer::_setComponentType(PixelComponentType componentType) {
                 auto numValues = _width * _pixelFormat.numComponents;
                 for (auto x = 0; x < numValues; x++) {
                     auto value = std::clamp(*srcValue * 255.0f, 0.0f, 255.0f);
-                    *dstValue = static_cast<uint8_t>(value);
+                    //*dstValue = static_cast<uint8_t>(value);
+                    *dstValue = static_cast<uint8_t>(roundf(value));
                     //auto value = std::min(255.0f, *srcValue * 255.0f);
                     //*dstValue = static_cast<uint8_t>(std::max(0.0f, value));
                     //*dstValue = static_cast<uint8_t>(std::min(255.0f, *srcValue * 255.0f));
@@ -1202,7 +1345,7 @@ bool ImageContainer::_setNumComponents(long numComponents, float fill, ImageTool
     // Modify pixel data
     if (numComponents > _pixelFormat.numComponents) {
         // In case of increasing the number of components - reallocate memory first
-        _contents = reinterpret_cast<char*>(std::realloc(_contents, newSize));
+        _contents = static_cast<std::byte*>(std::realloc(_contents, newSize));
         
         // And then modify pixel data
         for (long z = _depth - 1; z >= 0; z--) {
@@ -1236,7 +1379,7 @@ bool ImageContainer::_setNumComponents(long numComponents, float fill, ImageTool
         }
         
         // And then truncate memory
-        _contents = reinterpret_cast<char*>(std::realloc(_contents, newSize));
+        _contents = static_cast<std::byte*>(std::realloc(_contents, newSize));
     }
     
     // Apply changes
@@ -1302,7 +1445,10 @@ bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull s
 }
 
 
-void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+#define RESAMPLE_IN_LINEAR_SPACE 0
+
+
+void ImageContainer::_resampleLanczos(float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
     // Correct dimensions if wrong
     width = std::max(1l, width);
     height = std::max(1l, height);
@@ -1357,7 +1503,8 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
         .currentStep = 0,
         .stepDistance = totalSteps / 10
     };
-        
+    
+#if RESAMPLE_IN_LINEAR_SPACE
     // Convert pixels to linear colour profile
     LCMSColorProfile* linearProfile = nullptr;
     if (_colorProfile) {
@@ -1388,6 +1535,7 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
         //printf("Convert colour profile to linear\n");
         _convertColorProfile(linearProfile);
     }
+#endif
     
     // Calculate intermediate memory
     auto sourceSize = _width * _height * _depth * _pixelFormat.getSize();
@@ -1399,11 +1547,11 @@ void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, lon
     // Expand buffer size if needed
     if (temporarySize > sourceSize) {
         currentSize = temporarySize;
-        _contents = reinterpret_cast<char*>(std::realloc(_contents, temporarySize));
+        _contents = static_cast<std::byte*>(std::realloc(_contents, temporarySize));
     }
     
     // Intermediate buffer
-    auto tmpBuffer = reinterpret_cast<char*>(std::malloc(intermediateSize));
+    auto tmpBuffer = static_cast<std::byte*>(std::malloc(intermediateSize));
     
     // Source and destination contents for resampling passes
     auto sourceContents = _contents;
@@ -1539,23 +1687,40 @@ for (auto z = 0; z < _depth; z++) { \
     
     // Reduce buffer size if needed
     if (targetSize < currentSize) {
-        _contents = reinterpret_cast<char*>(std::realloc(_contents, targetSize));
+        _contents = static_cast<std::byte*>(std::realloc(_contents, targetSize));
     }
     
+#if RESAMPLE_IN_LINEAR_SPACE
     // Convert back colour profile if needed
     if (linearProfile != nullptr) {
         //printf("Convert colour profile back to non-linear\n");
         // TODO: Report progress
         _convertColorProfile(_colorProfile);
     }
+#endif
     
     // Clean up
     std::free(tmpBuffer);
+#if RESAMPLE_IN_LINEAR_SPACE
     LCMSColorProfileRelease(linearProfile);
+#endif
     
     // Notify callback
     if (progressCallback) {
         progressCallback(userInfo, 1);
+    }
+}
+
+
+
+void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+    switch (algorithm) {
+        case ResamplingAlgorithm::lanczos:
+            _resampleLanczos(quality, width, height, depth, renormalize, userInfo, progressCallback);
+            break;
+            
+        default:
+            break;
     }
 }
 
@@ -1822,7 +1987,7 @@ ImagePixel ImageContainer::getPixel(long x, long y, long z) {
 ImageContainer* fn_nonnull ImageContainer::copy() {
     // Copy contents
     auto contentsCopySize = _width * _height * _depth * _pixelFormat.getSize();
-    auto contentsCopy = reinterpret_cast<char*>(std::malloc(contentsCopySize));
+    auto contentsCopy = static_cast<std::byte*>(std::malloc(contentsCopySize));
     std::memcpy(contentsCopy, _contents, contentsCopySize);
     
     // Retain ICC profile
@@ -1892,7 +2057,7 @@ ASTCImage* fn_nullable ImageContainer::createASTCCompressed(ASTCBlockSize blockS
     // Create an image to compress
     auto integerComponents = _pixelFormat.componentType == PixelComponentType::uint8;
     auto linear = _colorProfile == nullptr && _sRGB == false;
-    auto rawImage = ASTCRawImage::create(_contents, _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
+    auto rawImage = ASTCRawImage::create(reinterpret_cast<char*>(_contents), _width, _height, _depth, _pixelFormat.numComponents, _pixelFormat.getComponentSize(), integerComponents, true, linear, _hdr, containsAlpha, ldrAlpha, normalMap, error);
     if (rawImage == nullptr) {
         //printf("Could not create an ASTCRawImage: %s\n", error.getErrorMessage());
         return nullptr;

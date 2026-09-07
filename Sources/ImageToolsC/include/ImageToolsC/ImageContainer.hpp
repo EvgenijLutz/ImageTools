@@ -10,6 +10,7 @@
 #include <ImageToolsC/Common.hpp>
 #include <ImageToolsC/ImagePixel.hpp>
 #include <ImageToolsC/ProgressCallback.hpp>
+#include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
 #include <ASTCEncoderC/ASTCEncoderC.hpp>
 
@@ -143,7 +144,7 @@ private:
     bool _hdr;
     
     // bool _borrowedContents;
-    char* fn_nonnull _contents;
+    std::byte* fn_nonnull _contents;
     long _width;
     long _height;
     long _depth;
@@ -163,14 +164,14 @@ private:
         };
     };
     
-    static ImageContainer* fn_nullable _tryLoadTGA(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nullable _tryLoadTGA(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadJPEG(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadPNG(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _tryLoadOpenEXR(const _LoadInfo& info fn_noescape) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable _load(const _LoadInfo& info fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED;
     
     
-    ImageContainer(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, char* fn_nonnull contents, long width, long height, long depth);
+    ImageContainer(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, std::byte* fn_nonnull contents, long width, long height, long depth);
     ~ImageContainer();
     
     
@@ -187,13 +188,14 @@ private:
     void _setPixel(ImagePixel pixel, long x, long y, long z);
     bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
     
+    void _resampleLanczos(float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
     void _resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
     
     void _sRGBToLinear(bool preserveAlpha);
     void _linearToSRGB(bool preserveAlpha);
     
 public:
-    static ImageContainer* fn_nonnull create(const char* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED;
+    static ImageContainer* fn_nonnull create(const void* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nonnull create(ImagePixelFormat pixelFormat, LCMSColorProfile* fn_nullable colorProfile, bool sRGB, bool hdr, long width, long height, long depth) SWIFT_RETURNS_RETAINED;
     // TODO: Implement conversion from ASTCRawImage or ASTCImage
     //static ImageContainer* fn_nonnull create(ASTCRawImage* fn_nonnull decompressedImage, ImageContainer* fn_nonnull originalImage);
@@ -202,13 +204,15 @@ public:
     static ImageContainer* fn_nullable load(const char* fn_nonnull path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(path:_:_:_:)) SWIFT_RETURNS_RETAINED;
     static ImageContainer* fn_nullable load(const void* fn_nonnull buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(buffer:size:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
+    long writePNG(const char* fn_nonnull path, float compressionLevel);
+    
     ImagePixelFormat getPixelFormat() SWIFT_COMPUTED_PROPERTY { return _pixelFormat; }
     LCMSColorProfile* fn_nullable getColorProfile() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_UNRETAINED { return _colorProfile; }
     bool getSRGB() SWIFT_COMPUTED_PROPERTY { return _sRGB; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _colorProfile == nullptr && _sRGB == false; }
     
-    const char* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const void* fn_nonnull getContents() SWIFT_COMPUTED_PROPERTY { return _contents; }
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * _pixelFormat.getSize(); }
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
