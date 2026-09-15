@@ -1,4 +1,4 @@
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -7,7 +7,7 @@ import PackageDescription
 let dependencies: [Package.Dependency] = {
 #if true
     [
-        .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: "1.1.1"),
+        .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: "1.2.0"),
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.2.0"),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: "1.6.58"),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: "2.19.1"),
@@ -30,10 +30,10 @@ let package = Package(
     // See the "Minimum Deployment Version for Reference Types Imported from C++":
     // https://www.swift.org/documentation/cxx-interop/status/
     platforms: [
-        .macOS(.v10_13),
-        .iOS(.v12),
-        .tvOS(.v12),
-        .watchOS(.v8),
+        .macOS(.v12),
+        .iOS(.v15),
+        .tvOS(.v15),
+        .watchOS(.v9),
         .visionOS(.v1),
     ],
     products: [
@@ -56,6 +56,9 @@ let package = Package(
                 .product(name: "LibPNGC", package: "LibPNG"),
                 .product(name: "LCMS2C", package: "LittleCMS"),
                 .product(name: "ASTCEncoderC", package: "ASTCEncoder")
+            ],
+            resources: [
+                .process("Resources")
             ],
             cxxSettings: [
                 .enableWarning("all")

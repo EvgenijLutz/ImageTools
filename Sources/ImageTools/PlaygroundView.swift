@@ -560,12 +560,12 @@ public struct ImageToolsPlaygroundView: View {
     
     public init(_ imageList: [TestImage], imagesGeneratorFunc: CGImageGeneratorFunc? = nil) {
         self.imageList = imageList
-//        if imageList.count > 4 {
-//            self.selectedTestImage = imageList[imageList.count - 4]
-//        }
-//        else {
+        if imageList.count > 25 {
+            self.selectedTestImage = imageList[25]
+        }
+        else {
             self.selectedTestImage = imageList.first
-//        }
+        }
         self.imagesGeneratorFunc = imagesGeneratorFunc
     }
     
@@ -712,33 +712,45 @@ public struct ImageToolsPlaygroundView: View {
                 Spacer()
             }
             .toolbar {
-                Menu {
-                    Button {
-                        loadTestImage()
-                    } label: {
-                        Text("Reset")
-                    }
-                    
-                    Divider()
-                    
+                Picker(selection: $selectedTestImage) {
                     ForEach(imageList) { option in
-                        Button {
-                            selectedTestImage = option
-                            loadTestImage()
-                        } label: {
-                            //Text(option.name)
-                            
-                            if selectedTestImage == option {
-                                Label(option.name, systemImage: "checkmark")
-                            }
-                            else {
-                                Text(option.name)
-                            }
-                        }
+                        Text(option.name)
+                            .tag(option)
                     }
                 } label: {
                     Image(systemName: "gear")
                 }
+                .onChange(of: selectedTestImage) { _, _ in
+                    loadTestImage()
+                }
+
+                //Menu {
+                //    Button {
+                //        loadTestImage()
+                //    } label: {
+                //        Text("Reset")
+                //    }
+                //
+                //    Divider()
+                //
+                //    ForEach(imageList) { option in
+                //        Button {
+                //            selectedTestImage = option
+                //            loadTestImage()
+                //        } label: {
+                //            //Text(option.name)
+                //
+                //            if selectedTestImage == option {
+                //                Label(option.name, systemImage: "checkmark")
+                //            }
+                //            else {
+                //                Text(option.name)
+                //            }
+                //        }
+                //    }
+                //} label: {
+                //    Image(systemName: "gear")
+                //}
             }
             .navigationTitle("ASTC")
             .toolbarTitleDisplayMode(.inlineLarge)
