@@ -92,9 +92,9 @@ public extension ImageContainer {
             let alphaMask: UInt32
             switch numComponents {
             case 1: alphaMask = CGImageAlphaInfo.none.rawValue
-            case 2: alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
+            case 2: alphaMask = CGImageAlphaInfo.last.rawValue
             case 3: alphaMask = CGImageAlphaInfo.none.rawValue
-            case 4: alphaMask = CGImageAlphaInfo.premultipliedLast.rawValue
+            case 4: alphaMask = CGImageAlphaInfo.last.rawValue
             default: throw ImageToolsError.other("Unsupported number of pixel components: \(numComponents)")
             }
             

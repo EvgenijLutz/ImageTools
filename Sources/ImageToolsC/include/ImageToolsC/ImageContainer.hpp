@@ -186,6 +186,7 @@ private:
     ImagePixel _getPixel(long x, long y, long z, long numComponents, PixelComponentType componentType);
     void _setPixel(ImagePixel pixel, long x, long y, long z, long numComponents, PixelComponentType componentType);
     void _setPixel(ImagePixel pixel, long x, long y, long z);
+    bool _flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape);
     bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
     
     void _resampleLanczos(float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);

@@ -109,6 +109,7 @@ struct CompressionQuality: Identifiable, Sendable, Hashable {
     }
 }
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 let compressionQualityPresets: [CompressionQuality] = [
     .init(0, ASTCCompressionQuality.fastest, "Fastest"),
     .init(1, ASTCCompressionQuality.fast, "Fast"),

@@ -11,7 +11,7 @@ let dependencies: [Package.Dependency] = {
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.2.0"),
         .package(url: "https://github.com/EvgenijLutz/LibPNG.git", from: "1.6.58"),
         .package(url: "https://github.com/EvgenijLutz/LittleCMS.git", from: "2.19.1"),
-        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: "5.6.0"),
+        .package(url: "https://github.com/EvgenijLutz/ASTCEncoder.git", from: "5.7.0"),
     ]
 #else
     [
@@ -60,9 +60,20 @@ let package = Package(
             resources: [
                 .process("Resources")
             ],
+            cSettings: [
+                .enableWarning("all"),
+                //.enableWarning("extra"),
+                //.enableWarning("implicit-fallthrough"),
+                //.enableWarning("int-conversion"),
+                //.enableWarning("pointer-to-int-cast")
+            ],
             cxxSettings: [
-                .enableWarning("all")
-            ]
+                .enableWarning("all"),
+                //.enableWarning("extra"),
+                //.enableWarning("implicit-fallthrough"),
+                //.enableWarning("int-conversion"),
+                //.enableWarning("pointer-to-int-cast")
+            ],
         ),
         .target(
             name: "ImageTools",

@@ -1,2 +1,2 @@
-Sources/ImageToolsC/tinyexr/** -linguist-vendored
-Sources/ImageToolsC/stb/** -linguist-vendored
+Sources/ImageToolsC/tinyexr/** linguist-vendored
+Sources/ImageToolsC/stb/** linguist-vendored

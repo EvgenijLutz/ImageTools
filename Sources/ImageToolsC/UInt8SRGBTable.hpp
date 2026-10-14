@@ -39,20 +39,20 @@ extern uint8_srgb_linear_value uint8Table[256];
 
 
 static inline float fromLinearToSRGB(float linear) {
-    if (linear < 0.0031308) {
-        return linear * 12.92;
+    if (linear < 0.0031308f) {
+        return linear * 12.92f;
     }
     
-    return std::pow(linear, 1.0/2.4) * 1.055 - 0.055;
+    return std::pow(linear, 1.0f / 2.4f) * 1.055f - 0.055f;
 }
 
 
 static inline float fromSRGBToLinear(float sRGB) {
-    if (sRGB <= 0.04045) {
-        return sRGB / 12.92;
+    if (sRGB <= 0.04045f) {
+        return sRGB / 12.92f;
     }
     
-    return std::pow((sRGB + 0.055) / 1.055, 2.4);
+    return std::pow((sRGB + 0.055f) / 1.055f, 2.4f);
 }
 
 

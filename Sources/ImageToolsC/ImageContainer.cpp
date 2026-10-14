@@ -1404,6 +1404,79 @@ void ImageContainer::_setPixel(ImagePixel pixel, long x, long y, long z) {
 }
 
 
+bool ImageContainer::_flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape) {
+    if (channelIndex < 0 || channelIndex >= _pixelFormat.numComponents) {
+        ImageToolsError::set(error, "Channel index is out of bounds");
+        return false;
+    }
+    
+    union Content {
+        std::byte* contents;
+        uint8_t* uint8;
+        _Float16* float16;
+        float* float32;
+    };
+    Content src = { .contents = _contents };
+    auto pixelSize = _pixelFormat.numComponents;
+    
+    if (_pixelFormat.componentType == PixelComponentType::uint8) {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto row = src.uint8 + y * _width * pixelSize + z * _width * _height * pixelSize;
+                for (auto x = 0; x < _width; x++) {
+                    auto index = x * pixelSize + channelIndex;
+#if 1
+                    row[index] = ~(row[index]);
+#else
+                    auto pixel = row[index];
+                    pixel = 255 - pixel;
+                    row[index] = pixel;
+#endif
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float16) {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto row = src.float16 + y * _width * pixelSize + z * _width * _height * pixelSize;
+                for (auto x = 0; x < _width; x++) {
+                    auto index = x * pixelSize + channelIndex;
+#if 1
+                    auto pixel = row[index];
+                    row[index] = -pixel + 1;
+#else
+                    auto pixel = row[index];
+                    pixel = pixel * 2 - 1;
+                    row[index] = (-pixel) / 2 + 1;
+#endif
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float32) {
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto row = src.float32 + y * _width * pixelSize + z * _width * _height * pixelSize;
+                for (auto x = 0; x < _width; x++) {
+                    auto index = x * pixelSize + channelIndex;
+#if 1
+                    auto pixel = row[index];
+                    row[index] = -pixel + 1;
+#else
+                    auto pixel = row[index];
+                    pixel = pixel * 2 - 1;
+                    row[index] = (-pixel) / 2 + 1;
+#endif
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    
+    return true;
+}
+
+
 bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape) {
     // The same channel wants to be assigned to the same image - no effect, save time by doing nothing
     if (this == sourceImage && channelIndex == sourceChannelIndex) {

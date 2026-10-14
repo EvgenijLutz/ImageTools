@@ -38,6 +38,15 @@ public extension ImageEditor {
     }
     
     
+    func flipChannel(_ channelIndex: Int) throws {
+        var error = ImageToolsError()
+        let success = __flipChannelUnsafe(channelIndex, &error)
+        guard success else {
+            throw error
+        }
+    }
+    
+    
     func setChannel(_ channelIndex: Int, image: ImageContainer, imageChannelIndex: Int) throws {
         var error = ImageToolsError()
         let success = __setChannelUnsafe(channelIndex, image, imageChannelIndex, &error)

@@ -139,6 +139,11 @@ void ImageEditor::setPixel(ImagePixel pixel, long x, long y, long z) {
 }
 
 
+bool ImageEditor::flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape) {
+    return _image->_flipChannel(channelIndex, error);
+}
+
+
 bool ImageEditor::setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape) {
     if (sourceImage == nullptr) {
         ImageToolsError::set(error, "Source image is not set");

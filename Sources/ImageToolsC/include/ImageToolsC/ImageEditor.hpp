@@ -57,6 +57,8 @@ public:
     ImagePixel getPixel(long x, long y, long z = 0);
     void setPixel(ImagePixel pixel, long x, long y, long z);
     
+    bool flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape) SWIFT_NAME(__flipChannelUnsafe(_:_:));
+    
     bool setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__setChannelUnsafe(_:_:_:_:));
     bool setChannel(long channelIndex, ImageEditor* fn_nonnull sourceEditor fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__setChannelUnsafe(_:_:_:_:));
     
