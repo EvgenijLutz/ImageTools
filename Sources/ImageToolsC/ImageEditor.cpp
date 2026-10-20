@@ -26,6 +26,11 @@ ImageEditor* fn_nonnull ImageEditor::create(ImageContainer* fn_nonnull image) {
 }
 
 
+ImageEditor* fn_nonnull ImageEditor::create(ImageEditor* fn_nonnull editor) {
+    return new ImageEditor(editor->_image->copy());
+}
+
+
 ImageEditor* fn_nullable ImageEditor::load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape) SWIFT_RETURNS_RETAINED {
     auto image = ImageContainer::load(path, assumedColorProfile, assumeSRGB, error);
     if (image == nullptr) {
@@ -65,6 +70,16 @@ void ImageEditor::edit(ImageContainer* fn_nonnull image) {
     
     ImageContainerRelease(_image);
     _image = image->copy();
+}
+
+
+void ImageEditor::edit(ImageEditor* fn_nonnull editor) {
+    // Same editor
+    if (this == editor) {
+        return;
+    }
+    
+    edit(editor->_image);
 }
 
 
@@ -136,6 +151,25 @@ ImagePixel ImageEditor::getPixel(long x, long y, long z) {
 
 void ImageEditor::setPixel(ImagePixel pixel, long x, long y, long z) {
     _image->_setPixel(pixel, x, y, z);
+}
+
+
+bool ImageEditor::checkIfFlatColor(long channel, float* fn_nullable outColor fn_noescape) {
+    return _image->checkIfFlatColor(channel, outColor);
+}
+
+
+ImageContainer* fn_nullable ImageEditor::extractImageChannel(long channel) SWIFT_RETURNS_RETAINED {
+    return _image->extractImageChannel(channel);
+}
+
+ImageEditor* fn_nullable ImageEditor::extractEditorChannel(long channel) SWIFT_RETURNS_RETAINED {
+    auto image = _image->extractImageChannel(channel);
+    if (image) {
+        return new ImageEditor(image);
+    }
+    
+    return nullptr;
 }
 
 

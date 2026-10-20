@@ -56,7 +56,7 @@ public extension ImageEditor {
     }
     
     
-    func setChannel(_ channelIndex: Int, editor: ImageContainer, editorImageChannelIndex: Int) throws {
+    func setChannel(_ channelIndex: Int, editor: ImageEditor, editorImageChannelIndex: Int) throws {
         var error = ImageToolsError()
         let success = __setChannelUnsafe(channelIndex, editor, editorImageChannelIndex, &error)
         guard success else {

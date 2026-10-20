@@ -144,7 +144,12 @@ private:
     bool _hdr;
     
     // bool _borrowedContents;
-    std::byte* fn_nonnull _contents;
+    union {
+        std::byte* fn_nonnull _contents;
+        uint8_t* fn_nonnull _uint8Contents;
+        _Float16* fn_nonnull _float16Contents;
+        float* fn_nonnull _float32Contents;
+    };
     long _width;
     long _height;
     long _depth;
@@ -222,9 +227,14 @@ public:
     
     ImagePixel getPixel(long x, long y, long z = 0);
     
+    /// Checks if the selected channel purely consists of a single colour.
+    bool checkIfFlatColor(long channel, float* fn_nullable outColor fn_noescape);
+    
     /// Creates a copy of the image container.
     [[nodiscard("Don't forget to release the copied object using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull copy() SWIFT_RETURNS_RETAINED;
+    
+    ImageContainer* fn_nullable extractImageChannel(long channel) SWIFT_RETURNS_RETAINED;
     
     /// Creates a copy of the image container with modifier component type.
     ImageContainer* fn_nonnull createPromoted(PixelComponentType componentType) SWIFT_RETURNS_RETAINED;
@@ -245,7 +255,8 @@ public:
     ASTCImage* fn_nullable createASTCCompressed(ASTCBlockSize blockSize, float quality, bool containsAlpha = true, bool ldrAlpha = true, bool normalMap = false, void* fn_nullable userInfo fn_noescape = nullptr, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape = nullptr) SWIFT_NAME(__createASTCCompressedUnsafe(blockSize:quality:containsAlpha:ldrAlpha:normalMap:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
 }
 FN_SWIFT_INTERFACE(ImageContainer)
-SWIFT_UNCHECKED_SENDABLE;
+SWIFT_UNCHECKED_SENDABLE
+SWIFT_SAFE;
 
 
 FN_DEFINE_SWIFT_INTERFACE(ImageContainer)

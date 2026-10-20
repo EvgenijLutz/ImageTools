@@ -29,11 +29,13 @@ private:
     
 public:
     static ImageEditor* fn_nonnull create(ImageContainer* fn_nonnull image) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nonnull create(ImageEditor* fn_nonnull editor) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
     
     static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(path:_:_:_:)) SWIFT_RETURNS_RETAINED;
     static ImageEditor* fn_nullable load(const char* fn_nullable buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(buffer:size:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
     void edit(ImageContainer* fn_nonnull image);
+    void edit(ImageEditor* fn_nonnull editor);
     
     [[nodiscard("Don't forget to release the image using the ImageContainerRelease function.")]]
     ImageContainer* fn_nonnull getImageCopy() SWIFT_COMPUTED_PROPERTY SWIFT_RETURNS_RETAINED;
@@ -56,6 +58,12 @@ public:
     
     ImagePixel getPixel(long x, long y, long z = 0);
     void setPixel(ImagePixel pixel, long x, long y, long z);
+    
+    /// Checks if the selected channel purely consists of a single colour.
+    bool checkIfFlatColor(long channel, float* fn_nullable outColor fn_noescape);
+    
+    ImageContainer* fn_nullable extractImageChannel(long channel) SWIFT_RETURNS_RETAINED;
+    ImageEditor* fn_nullable extractEditorChannel(long channel) SWIFT_RETURNS_RETAINED;
     
     bool flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape) SWIFT_NAME(__flipChannelUnsafe(_:_:));
     

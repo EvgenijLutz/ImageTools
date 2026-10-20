@@ -17,6 +17,8 @@
 #include "stb/stb_image.h"
 #include "tinyexr/tinyexr.h"
 
+#define SRGB_LINEAR_CONVERSION_PARALLEL 0
+
 
 // MARK: - Common functions
 
@@ -94,16 +96,16 @@ static inline Float16Pixel _getPixel_float16(long x, long y, long z, long width,
     
     auto float16Pixel = reinterpret_cast<_Float16*>(contents) + index;
     if constexpr (numComponents >= 1) {
-        pixel.contents[0] = static_cast<float>(float16Pixel[0]);
+        pixel.contents[0] = float16Pixel[0];
     }
     if constexpr (numComponents >= 2) {
-        pixel.contents[1] = static_cast<float>(float16Pixel[1]);
+        pixel.contents[1] = float16Pixel[1];
     }
     if constexpr (numComponents >= 3) {
-        pixel.contents[2] = static_cast<float>(float16Pixel[2]);
+        pixel.contents[2] = float16Pixel[2];
     }
     if constexpr (numComponents >= 4) {
-        pixel.contents[3] = static_cast<float>(float16Pixel[3]);
+        pixel.contents[3] = float16Pixel[3];
     }
     
     return pixel;
@@ -120,16 +122,16 @@ static inline ImagePixel _getPixel_float32(long x, long y, long z, long width, l
     
     auto float32Pixel = reinterpret_cast<float*>(contents) + index;
     if constexpr (numComponents >= 1) {
-        pixel.contents[0] = static_cast<float>(float32Pixel[0]);
+        pixel.contents[0] = float32Pixel[0];
     }
     if constexpr (numComponents >= 2) {
-        pixel.contents[1] = static_cast<float>(float32Pixel[1]);
+        pixel.contents[1] = float32Pixel[1];
     }
     if constexpr (numComponents >= 3) {
-        pixel.contents[2] = static_cast<float>(float32Pixel[2]);
+        pixel.contents[2] = float32Pixel[2];
     }
     if constexpr (numComponents >= 4) {
-        pixel.contents[3] = static_cast<float>(float32Pixel[3]);
+        pixel.contents[3] = float32Pixel[3];
     }
     
     return pixel;
@@ -278,8 +280,8 @@ static inline _Float16 _lanczos_float16(_Float16 x, _Float16 a) {
 // MARK: - Lanczos X
 
 static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
-    long left = floor(x - a + 1);
-    long right = floor(x + a);
+    int left = floor(x - a + 1);
+    int right = floor(x + a);
     auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -295,8 +297,8 @@ static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, floa
 
 template<long numComponents>
 static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
-    long left = floor(static_cast<float>(x - a + 1));
-    long right = floor(static_cast<float>(x + a));
+    int left = floor(static_cast<float>(x - a + 1));
+    int right = floor(static_cast<float>(x + a));
     auto sum = Float16Pixel();
     _Float16 totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -312,8 +314,8 @@ static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Floa
 
 template<long numComponents>
 static inline ImagePixel _sampleLanczosX_float32(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
-    long left = floor(x - a + 1);
-    long right = floor(x + a);
+    int left = floor(x - a + 1);
+    int right = floor(x + a);
     auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -331,8 +333,8 @@ static inline ImagePixel _sampleLanczosX_float32(float x, float y, float z, floa
 // MARK: - Lanczos Y
 
 static inline ImagePixel _sampleLanczosY_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
-    long left = floor(y - a + 1);
-    long right = floor(y + a);
+    int left = floor(y - a + 1);
+    int right = floor(y + a);
     auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -348,8 +350,8 @@ static inline ImagePixel _sampleLanczosY_general(float x, float y, float z, floa
 
 template<long numComponents>
 static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
-    long left = floor(static_cast<float>(y - a + 1));
-    long right = floor(static_cast<float>(y + a));
+    int left = floor(static_cast<float>(y - a + 1));
+    int right = floor(static_cast<float>(y + a));
     auto sum = Float16Pixel();
     _Float16 totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -365,8 +367,8 @@ static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Floa
 
 template<long numComponents>
 static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
-    long left = floor(y - a + 1);
-    long right = floor(y + a);
+    int left = floor(y - a + 1);
+    int right = floor(y + a);
     auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -384,8 +386,8 @@ static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, floa
 // MARK: - Lanczos Z
 
 static inline ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
-    long left = floor(z - a + 1);
-    long right = floor(z + a);
+    int left = floor(z - a + 1);
+    int right = floor(z + a);
     auto sum = ImagePixel();
     float totalWeight = 0.0;
     for (auto i = left; i <= right; ++i) {
@@ -1502,13 +1504,64 @@ bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull s
     }
     
     // Set the specified component of every pixel
-    for (auto z = 0; z < _depth; z++) {
-        for (auto y = 0; y < _height; y++) {
-            for (auto x = 0; x < _width; x++) {
-                auto destinationPixel = getPixel(x, y, z);
-                auto sourcePixel = sourceImage->getPixel(x, y, z);
-                destinationPixel.contents[channelIndex] = sourcePixel.contents[sourceChannelIndex];
-                _setPixel(destinationPixel, x, y, z);
+    auto srcNumComponents = sourceImage->_pixelFormat.numComponents;
+    auto dstNumComponents = _pixelFormat.numComponents;
+    if (_pixelFormat.componentType == sourceImage->_pixelFormat.componentType && _pixelFormat.componentType == PixelComponentType::uint8) {
+        auto srcContents = sourceImage->_uint8Contents;
+        auto dstContents = _uint8Contents;
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcPixel = srcContents + (y * _width + z * _width * _height) * srcNumComponents + sourceChannelIndex;
+                auto dstPixel = dstContents + (y * _width + z * _width * _height) * dstNumComponents + channelIndex;
+                for (auto x = 0; x < _width; x++) {
+                    *dstPixel = *srcPixel;
+                    srcPixel += srcNumComponents;
+                    dstPixel += dstNumComponents;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else if (_pixelFormat.componentType == sourceImage->_pixelFormat.componentType && _pixelFormat.componentType == PixelComponentType::float16) {
+        auto srcContents = sourceImage->_float16Contents;
+        auto dstContents = _float16Contents;
+        for (auto z = 0; z < _depth; z++) {
+            //for (auto y = 0; y < _height; y++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcPixel = srcContents + (y * _width + z * _width * _height) * srcNumComponents + sourceChannelIndex;
+                auto dstPixel = dstContents + (y * _width + z * _width * _height) * dstNumComponents + channelIndex;
+                for (auto x = 0; x < _width; x++) {
+                    *dstPixel = *srcPixel;
+                    srcPixel += srcNumComponents;
+                    dstPixel += dstNumComponents;
+                }
+            } CONCURRENT_LOOP_END
+            //}
+        }
+    }
+    else if (_pixelFormat.componentType == sourceImage->_pixelFormat.componentType && _pixelFormat.componentType == PixelComponentType::float32) {
+        auto srcContents = sourceImage->_float32Contents;
+        auto dstContents = _float32Contents;
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+                auto srcPixel = srcContents + (y * _width + z * _width * _height) * srcNumComponents + sourceChannelIndex;
+                auto dstPixel = dstContents + (y * _width + z * _width * _height) * dstNumComponents + channelIndex;
+                for (auto x = 0; x < _width; x++) {
+                    *dstPixel = *srcPixel;
+                    srcPixel += srcNumComponents;
+                    dstPixel += dstNumComponents;
+                }
+            } CONCURRENT_LOOP_END
+        }
+    }
+    else {
+        for (auto z = 0; z < _depth; z++) {
+            for (auto y = 0; y < _height; y++) {
+                for (auto x = 0; x < _width; x++) {
+                    auto destinationPixel = getPixel(x, y, z);
+                    auto sourcePixel = sourceImage->getPixel(x, y, z);
+                    destinationPixel.contents[channelIndex] = sourcePixel.contents[sourceChannelIndex];
+                    _setPixel(destinationPixel, x, y, z);
+                }
             }
         }
     }
@@ -1850,21 +1903,49 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
     
     
     if (_pixelFormat.componentType == PixelComponentType::float16) {
-        _Float16* halfData = reinterpret_cast<_Float16*>(_contents);
+        _Float16* halfData = _float16Contents;
         
         if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+#if SRGB_LINEAR_CONVERSION_PARALLEL
+            auto numComponents = _pixelFormat.numComponents;
+            for (auto z = 0; z < _depth; z++) {
+                CONCURRENT_LOOP_START(0, _height, y) {
+                    auto dstPixel = halfData + (y * _width + z * _width * _height) * numComponents;
+                    for (auto x = 0; x < _width; x++) {
+                        dstPixel[0] = fromSRGBToLinear(dstPixel[0]);
+                        dstPixel[1] = fromSRGBToLinear(dstPixel[1]);
+                        dstPixel[2] = fromSRGBToLinear(dstPixel[2]);
+                        dstPixel += 4;
+                    }
+                } CONCURRENT_LOOP_END
+            }
+#else
             for (auto index = 0; index < numPixels; index++) {
                 halfData[0] = fromSRGBToLinear(halfData[0]);
                 halfData[1] = fromSRGBToLinear(halfData[1]);
                 halfData[2] = fromSRGBToLinear(halfData[2]);
                 halfData += 4;
             }
+#endif
         }
         else {
+#if SRGB_LINEAR_CONVERSION_PARALLEL
+            auto numComponents = _pixelFormat.numComponents;
+            for (auto z = 0; z < _depth; z++) {
+                CONCURRENT_LOOP_START(0, _height, y) {
+                    auto dstPixel = halfData + (y * _width + z * _width * _height) * numComponents;
+                    auto count = _width * numComponents;
+                    for (auto x = 0; x < count; x++) {
+                        dstPixel[x] = fromSRGBToLinear(dstPixel[x]);
+                    }
+                } CONCURRENT_LOOP_END
+            }
+#else
             for (auto index = 0; index < totalComponents; index++) {
                 *halfData = fromSRGBToLinear(*halfData);
                 halfData += 1;
             }
+#endif
         }
         
         return;
@@ -1872,7 +1953,7 @@ void ImageContainer::_sRGBToLinear(bool preserveAlpha) {
     
     
     if (_pixelFormat.componentType == PixelComponentType::float32) {
-        float* floatData = reinterpret_cast<float*>(_contents);
+        float* floatData = _float32Contents;
         
         if (_pixelFormat.numComponents == 4 && preserveAlpha) {
             for (auto index = 0; index < numPixels; index++) {
@@ -1994,21 +2075,49 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
     
     
     if (_pixelFormat.componentType == PixelComponentType::float16) {
-        _Float16* halfData = reinterpret_cast<_Float16*>(_contents);
+        _Float16* halfData = _float16Contents;
         
         if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+#if SRGB_LINEAR_CONVERSION_PARALLEL
+            auto numComponents = _pixelFormat.numComponents;
+            for (auto z = 0; z < _depth; z++) {
+                CONCURRENT_LOOP_START(0, _height, y) {
+                    auto dstPixel = halfData + (y * _width + z * _width * _height) * numComponents;
+                    for (auto x = 0; x < _width; x++) {
+                        dstPixel[0] = fromLinearToSRGB(dstPixel[0]);
+                        dstPixel[1] = fromLinearToSRGB(dstPixel[1]);
+                        dstPixel[2] = fromLinearToSRGB(dstPixel[2]);
+                        dstPixel += 4;
+                    }
+                } CONCURRENT_LOOP_END
+            }
+#else
             for (auto index = 0; index < numPixels; index++) {
                 halfData[0] = fromLinearToSRGB(halfData[0]);
                 halfData[1] = fromLinearToSRGB(halfData[1]);
                 halfData[2] = fromLinearToSRGB(halfData[2]);
                 halfData += 4;
             }
+#endif
         }
         else {
+#if SRGB_LINEAR_CONVERSION_PARALLEL
+            auto numComponents = _pixelFormat.numComponents;
+            for (auto z = 0; z < _depth; z++) {
+                CONCURRENT_LOOP_START(0, _height, y) {
+                    auto dstPixel = halfData + (y * _width + z * _width * _height) * numComponents;
+                    auto count = _width * numComponents;
+                    for (auto x = 0; x < count; x++) {
+                        dstPixel[x] = fromLinearToSRGB(dstPixel[x]);
+                    }
+                } CONCURRENT_LOOP_END
+            }
+#else
             for (auto index = 0; index < totalComponents; index++) {
                 *halfData = fromLinearToSRGB(*halfData);
                 halfData += 1;
             }
+#endif
         }
         
         return;
@@ -2068,6 +2177,19 @@ ImageContainer* fn_nonnull ImageContainer::copy() {
     
     // Create a new ImageContainer instance
     return new ImageContainer(_pixelFormat, colorProfile, _sRGB, _hdr, contentsCopy, _width, _height, _depth);
+}
+
+
+ImageContainer* fn_nullable ImageContainer::extractImageChannel(long channel) SWIFT_RETURNS_RETAINED {
+    // Invalid channel index
+    if (channel < 0 || channel >= _pixelFormat.numComponents) {
+        return nullptr;
+    }
+    
+    auto format = ImagePixelFormat(_pixelFormat.componentType, 1);
+    auto image = ImageContainer::create(format, _colorProfile, _sRGB, _hdr, _width, _height, _depth);
+    image->_setChannel(0, this, channel, nullptr);
+    return image;
 }
 
 
