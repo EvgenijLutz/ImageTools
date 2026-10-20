@@ -561,8 +561,8 @@ public struct ImageToolsPlaygroundView: View {
     
     public init(_ imageList: [TestImage], imagesGeneratorFunc: CGImageGeneratorFunc? = nil) {
         self.imageList = imageList
-        if imageList.count > 25 {
-            self.selectedTestImage = imageList[25]
+        if imageList.count > 11 {
+            self.selectedTestImage = imageList[11]
         }
         else {
             self.selectedTestImage = imageList.first
@@ -610,7 +610,7 @@ public struct ImageToolsPlaygroundView: View {
                     let startTime = CACurrentMediaTime()
                     try await customFunc(path, selectedBlockOption.blockSize, selectedCompressionQuality.quality, imageProvider)
                     let elapsed = CACurrentMediaTime() - startTime
-                    print("Image prcessing time: \(elapsed)s")
+                    print("Image processing time: \(elapsed)s")
                     return
                 }
                 

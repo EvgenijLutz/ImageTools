@@ -12,6 +12,7 @@
 #include <LCMS2C/LCMS2C.hpp>
 #include "Threading.hpp"
 #include "UInt8SRGBTable.hpp"
+#include "Timing.hpp"
 #include <assert.h>
 
 #include "stb/stb_image.h"
@@ -271,13 +272,65 @@ static inline _Float16 _sinc_float16(_Float16 x) {
     return sin(static_cast<float>(x)) / x;
 }
 
-static inline _Float16 _lanczos_float16(_Float16 x, _Float16 a) {
+/*static inline*/ _Float16 _lanczos_float16(_Float16 x, _Float16 a) {
     if (fabs(static_cast<float>(x)) >= a) return 0.0;
     return _sinc_float16(x) * _sinc_float16(x / a);
 }
 
 
 // MARK: - Lanczos X
+
+static _Float16 w3Table[6] = { 0.024261, -0.135132, 0.607910, 0.607910, -0.135132, 0.024261 };
+
+static inline simd_half4 _sampleLanczosX_a3_float16_4(int left, int right, int width, simd_half4* fn_nonnull row fn_noescape) {
+    auto sum = simd_make_half4(0, 0, 0, 0);
+    _Float16 totalWeight = 0.0;
+    int pos = 0;
+    
+    // `left` is past the left edge of the row
+    auto pastLeftEdge = left;
+    if (left < 0) {
+        pastLeftEdge = 0;
+    }
+    
+    // `left` is past the right edge of the row
+    auto pastRightEdge = right;
+    auto rightEdge = width - 1;
+    if (right > rightEdge) {
+        right = rightEdge;
+    }
+    
+    // Negative x - before row bounds
+    while (left < pastLeftEdge) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        sum += row[0] * w;
+        totalWeight += w;
+        
+        left += 1;
+    }
+    while (left <= right) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        sum += row[left] * w;
+        totalWeight += w;
+        
+        left += 1;
+    }
+    while (left <= pastRightEdge) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        sum += row[rightEdge] * w;
+        totalWeight += w;
+        
+        left += 1;
+    }
+    
+    return sum / totalWeight;
+}
 
 static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     int left = floor(x - a + 1);
@@ -295,14 +348,26 @@ static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, floa
     return sum / totalWeight;
 }
 
+#define USE_W3_TABLE 0
+
 template<long numComponents>
 static inline Float16Pixel _sampleLanczosX_float16(_Float16 x, _Float16 y, _Float16 z, _Float16 a, long width, long height, long depth, std::byte* fn_nonnull contents, bool renormalize) {
     int left = floor(static_cast<float>(x - a + 1));
     int right = floor(static_cast<float>(x + a));
     auto sum = Float16Pixel();
     _Float16 totalWeight = 0.0;
+    //printf("(%.2f, %.2f) %d...%d:\n", (float)x, (float)y, left, right);
+#if USE_W3_TABLE
+    int pos = 0;
+#endif
     for (auto i = left; i <= right; ++i) {
+#if USE_W3_TABLE
+        auto w = w3Table[pos];
+        pos += 1;
+#else
         auto w = _lanczos_float16(x - i, a);
+#endif
+        //printf("lanczos(%.2f, %.2f) = %2f\n", (float)(x - i), (float)(a), (float)(w));
         sum += _getPixel_float16<numComponents>(i, y, z, width, height, depth, contents) * w;
         totalWeight += w;
     }
@@ -354,8 +419,18 @@ static inline Float16Pixel _sampleLanczosY_float16(_Float16 x, _Float16 y, _Floa
     int right = floor(static_cast<float>(y + a));
     auto sum = Float16Pixel();
     _Float16 totalWeight = 0.0;
+    //printf("(%.2f, %.2f) %d...%d:\n", (float)x, (float)y, left, right);
+#if USE_W3_TABLE
+    int pos = 0;
+#endif
     for (auto i = left; i <= right; ++i) {
+#if USE_W3_TABLE
+        auto w = w3Table[pos];
+        pos += 1;
+#else
         auto w = _lanczos_float16(y - i, a);
+#endif
+        //printf("lanczos(%.2f, %.2f) = %2f\n", (float)(x - i), (float)(a), (float)(w));
         sum += _getPixel_float16<numComponents>(x, i, z, width, height, depth, contents) * w;
         totalWeight += w;
     }
@@ -1571,10 +1646,10 @@ bool ImageContainer::_setChannel(long channelIndex, ImageContainer* fn_nonnull s
 }
 
 
-#define RESAMPLE_IN_LINEAR_SPACE 0
+#define RESAMPLING_ROW_MAJOR 0
 
 
-void ImageContainer::_resampleLanczos(float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
+void ImageContainer::_resampleLanczos(float quality, long width, long height, long depth, bool renormalize) {
     // Correct dimensions if wrong
     width = std::max(1l, width);
     height = std::max(1l, height);
@@ -1582,86 +1657,13 @@ void ImageContainer::_resampleLanczos(float quality, long width, long height, lo
     
     // Don't do anything if the target size already equals to the original size
     if (width == _width && height == _height && depth == _depth) {
-        // Notify callback
-        if (progressCallback) {
-            progressCallback(userInfo, 1);
-        }
-        
-        // Resampling completed
         return;
     }
     
-    // Prepare progress/error handler
-    struct ProgressHandler {
-        void* fn_nullable userInfo;
-        ImageToolsProgressCallback fn_nullable progressCallback;
-        
-        long numSteps;
-        long currentStep;
-        long stepDistance;
-        
-        void notifyProgress() {
-            // Don't do anything if
-            if (progressCallback == nullptr) {
-                return;
-            }
-            
-            currentStep = std::min(currentStep + 1, numSteps);
-            
-            // Continue task
-            if (currentStep % stepDistance != 0) {
-                return;
-            }
-            
-            // Notify about process milestone
-            auto progress = 1.0f / static_cast<float>(numSteps) * static_cast<float>(currentStep);
-            progressCallback(userInfo, progress);
-        }
-    };
-    auto phase1Steps = _height * _depth;
-    auto phase2Steps = height * _depth;
-    auto phase3Steps = depth > 1 ? (height * depth) : (0);
-    auto totalSteps = phase1Steps + phase2Steps + phase3Steps;
-    auto progressHandler = ProgressHandler {
-        .userInfo = userInfo,
-        .progressCallback = progressCallback,
-        .numSteps = totalSteps,
-        .currentStep = 0,
-        .stepDistance = totalSteps / 10
-    };
-    
-#if RESAMPLE_IN_LINEAR_SPACE
-    // Convert pixels to linear colour profile
-    LCMSColorProfile* linearProfile = nullptr;
-    if (_colorProfile) {
-        // Check if the colour profile should be converted at all
-        if (_colorProfile->checkIsLinear()) {
-            //printf("Colour profile is already linear\n");
-        }
-        else {
-            linearProfile = _colorProfile->createLinear();
-            if (linearProfile == nullptr) {
-                // This should never happen
-                printf("Could not create linear colour profile\n");
-            }
-        }
+    if (_pixelFormat.componentType == PixelComponentType::float16 && depth == 1 && (_pixelFormat.numComponents == 4 || _pixelFormat.numComponents == 2 || _pixelFormat.numComponents == 1) && (int)quality == 3 && renormalize == false) {
+        _resampleLanczos3_2d(width, height);
+        return;
     }
-    else if (_sRGB) {
-        auto sRGBProfile = LCMSColorProfile::createSRGB();
-        linearProfile = sRGBProfile->createLinear();
-        if (linearProfile == nullptr) {
-            // This should never happen
-            printf("Could not create linear colour profile\n");
-        }
-        LCMSColorProfileRelease(sRGBProfile);
-    }
-    
-    // Create source image with linear color profile
-    if (linearProfile != nullptr) {
-        //printf("Convert colour profile to linear\n");
-        _convertColorProfile(linearProfile);
-    }
-#endif
     
     // Calculate intermediate memory
     auto sourceSize = _width * _height * _depth * _pixelFormat.getSize();
@@ -1691,6 +1693,7 @@ void ImageContainer::_resampleLanczos(float quality, long width, long height, lo
                                static_cast<float>(_depth) / depth);
     
     // Horizontal pass
+    auto horizontalPassStart = timing_get_current_media_time();
 #define resample_x_func(_type_, _nc_) \
 for (auto z = 0; z < _depth; z++) { \
     CONCURRENT_LOOP_START(0, _height, y) { \
@@ -1701,16 +1704,45 @@ for (auto z = 0; z < _depth; z++) { \
         } \
     } CONCURRENT_LOOP_END \
 }
-    //for (auto z = 0; z < _depth; z++) {
-    //    CONCURRENT_LOOP_START(0, _height, y) {
-    //        for (auto x = 0; x < width; x++) {
-    //            auto srcX = (x + 0.5) * scale.x - 0.5;
-    //            auto pixel = _sampleLanczosX_float16<4>(srcX, y, z, quality, _width, _height, _depth, sourceContents, renormalize);
-    //            _setPixel_float16<4>(pixel, x, y, z, width, _height, _depth, destinationContents);
-    //        }
-    //    } CONCURRENT_LOOP_END
-    //}
-    if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_x_func(float16, 1) }
+    if (componentType == PixelComponentType::float16 && numComponents == 4 && (int)quality == 3 && renormalize == false) {
+#if RESAMPLING_ROW_MAJOR
+        auto intWidth = static_cast<int>(_width);
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+            //for (auto y = 0; y < _height; y++) {
+                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents + (z * _height * _width + y * _width) * 4 * 2);
+                simd_half4* outRow = reinterpret_cast<simd_half4*>(destinationContents + (z * _height * width + y * width) * 4 * 2);
+                auto srcX = static_cast<float>((0 + 0.5) * scale.x - 0.5);
+                for (auto x = 0; x < width; x++) {
+                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
+                    outRow[x] = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
+                    srcX += scale.x;
+                }
+            //}
+            } CONCURRENT_LOOP_END
+        }
+#else
+        auto intWidth = static_cast<int>(_width);
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, _height, y) {
+            //for (auto y = 0; y < _height; y++) {
+                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + z * _height * _width + y * _width;
+                simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + z * _height * width + y;
+                
+                auto srcX = static_cast<float>((0 + 0.5) * scale.x - 0.5);
+                for (auto x = 0; x < width; x++) {
+                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
+                    auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
+                    *outPlane = pixel;
+                    srcX += scale.x;
+                    outPlane += _height;
+                }
+            //}
+            } CONCURRENT_LOOP_END
+        }
+#endif
+    }
+    else if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_x_func(float16, 1) }
     else if (componentType == PixelComponentType::float16 && numComponents == 2) { resample_x_func(float16, 2) }
     else if (componentType == PixelComponentType::float16 && numComponents == 3) { resample_x_func(float16, 3) }
     else if (componentType == PixelComponentType::float16 && numComponents == 4) { resample_x_func(float16, 4) }
@@ -1732,9 +1764,12 @@ for (auto z = 0; z < _depth; z++) { \
     // Prepare source and destination contents for further processing
     std::swap(sourceContents, destinationContents);
 #undef resample_x_func
+    auto horizontalPassElapsed = timing_get_current_media_time() - horizontalPassStart;
+    printf("Horizontal pass time: %.4fs\n", horizontalPassElapsed);
     
     
     // Vertical pass
+    auto verticalPassStart = timing_get_current_media_time();
 #define resample_y_func(_type_, _nc_) \
 for (auto z = 0; z < _depth; z++) { \
     CONCURRENT_LOOP_START(0, height, y) { \
@@ -1743,21 +1778,34 @@ for (auto z = 0; z < _depth; z++) { \
             auto pixel = _sampleLanczosY_##_type_<_nc_>(x, srcY, z, quality, width, _height, _depth, sourceContents, renormalize); \
             _setPixel_##_type_<_nc_>(pixel, x, y, z, width, height, _depth, destinationContents); \
         } \
-        progressHandler.notifyProgress(); \
     } CONCURRENT_LOOP_END \
 }
-    //for (auto z = 0; z < _depth; z++) {
-    //    CONCURRENT_LOOP_START(0, height, y) {
-    //        for (auto x = 0; x < width; x++) {
-    //            auto srcY = (y + 0.5) * scale.y - 0.5;
-    //            auto pixel = _sampleLanczosY_float16<4>(x, srcY, z, quality, width, _height, _depth, sourceContents, renormalize);
-    //            _setPixel_float16<4>(pixel, x, y, z, width, height, _depth, destinationContents);
-    //        }
-    //        // Check cancellation
-    //        progressHandler.notifyProgress();
-    //    } CONCURRENT_LOOP_END
-    //}
-    if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_y_func(float16, 1) }
+    if (componentType == PixelComponentType::float16 && numComponents == 4 && (int)quality == 3 && renormalize == false) {
+#if RESAMPLING_ROW_MAJOR
+# error Not implemented
+#else
+        // Write transposed, a bit slower than the previous loop, but helps the second pass
+        auto intWidth = static_cast<int>(_height);
+        for (auto z = 0; z < _depth; z++) {
+            CONCURRENT_LOOP_START(0, height, y) {
+            //for (auto y = 0; y < height; y++) {
+                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + z * _height * width + y * _width;
+                simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + z * height * width + y;
+                
+                auto srcX = static_cast<float>((0 + 0.5) * scale.y - 0.5);
+                for (auto x = 0; x < width; x++) {
+                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
+                    auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
+                    *outPlane = pixel;
+                    srcX += scale.x;
+                    outPlane += width;
+                }
+            //}
+            } CONCURRENT_LOOP_END
+        }
+#endif
+    }
+    else if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_y_func(float16, 1) }
     else if (componentType == PixelComponentType::float16 && numComponents == 2) { resample_y_func(float16, 2) }
     else if (componentType == PixelComponentType::float16 && numComponents == 3) { resample_y_func(float16, 3) }
     else if (componentType == PixelComponentType::float16 && numComponents == 4) { resample_y_func(float16, 4) }
@@ -1773,14 +1821,14 @@ for (auto z = 0; z < _depth; z++) { \
                     auto pixel = _sampleLanczosY_general(x, srcY, z, quality, width, _height, _depth, sourceContents, numComponents, componentType, renormalize);
                     _setPixel_general(pixel, x, y, z, width, height, _depth, destinationContents, numComponents, componentType);
                 }
-                // Check cancellation
-                progressHandler.notifyProgress();
             } CONCURRENT_LOOP_END
         }
     }
     // Prepare source and destination contents for further processing
     std::swap(sourceContents, destinationContents);
 #undef resample_y_func
+    auto verticalPassElapsed = timing_get_current_media_time() - verticalPassStart;
+    printf("Vertical pass time: %.4fs\n", verticalPassElapsed);
     
     
     // Depth pass if needed
@@ -1792,9 +1840,6 @@ for (auto z = 0; z < _depth; z++) { \
                     auto pixel = _sampleLanczosZ_general(x, y, srcZ, quality, width, height, _depth, sourceContents, numComponents, componentType, renormalize);
                     _setPixel_general(pixel, x, y, z, width, height, depth, destinationContents, numComponents, componentType);
                 }
-                
-                // Check cancellation
-                progressHandler.notifyProgress();
             } CONCURRENT_LOOP_END
         }
         // Prepare source and destination contents for further processing
@@ -1816,25 +1861,8 @@ for (auto z = 0; z < _depth; z++) { \
         _contents = static_cast<std::byte*>(std::realloc(_contents, targetSize));
     }
     
-#if RESAMPLE_IN_LINEAR_SPACE
-    // Convert back colour profile if needed
-    if (linearProfile != nullptr) {
-        //printf("Convert colour profile back to non-linear\n");
-        // TODO: Report progress
-        _convertColorProfile(_colorProfile);
-    }
-#endif
-    
     // Clean up
     std::free(tmpBuffer);
-#if RESAMPLE_IN_LINEAR_SPACE
-    LCMSColorProfileRelease(linearProfile);
-#endif
-    
-    // Notify callback
-    if (progressCallback) {
-        progressCallback(userInfo, 1);
-    }
 }
 
 
@@ -1842,7 +1870,7 @@ for (auto z = 0; z < _depth; z++) { \
 void ImageContainer::_resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape) {
     switch (algorithm) {
         case ResamplingAlgorithm::lanczos:
-            _resampleLanczos(quality, width, height, depth, renormalize, userInfo, progressCallback);
+            _resampleLanczos(quality, width, height, depth, renormalize);
             break;
             
         default:

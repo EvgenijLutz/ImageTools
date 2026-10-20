@@ -8,7 +8,7 @@
 #include <ImageToolsC/ImageContainer.hpp>
 
 
-static bool check_flat_color_uint8(uint8_t* fn_nonnull contents, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
+static bool check_flat_color_uint8(uint8_t* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
     auto value = contents[channel];
     if (outColor) {
         *outColor = static_cast<float>(value) / 255.0f;
@@ -31,7 +31,7 @@ static bool check_flat_color_uint8(uint8_t* fn_nonnull contents, long width, lon
 }
 
 
-static bool check_flat_color_float16(_Float16* fn_nonnull contents, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
+static bool check_flat_color_float16(_Float16* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
     auto value = contents[channel];
     if (outColor) {
         *outColor = static_cast<float>(value);
@@ -54,7 +54,7 @@ static bool check_flat_color_float16(_Float16* fn_nonnull contents, long width, 
 }
 
 
-static bool check_flat_color_float32(float* fn_nonnull contents, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
+static bool check_flat_color_float32(float* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long channel, float* fn_nullable outColor fn_noescape) {
     auto value = contents[channel];
     if (outColor) {
         *outColor = value;
