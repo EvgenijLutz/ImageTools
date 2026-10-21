@@ -125,7 +125,9 @@ public:
 
 /// Image container.
 ///
-/// - Note: This object is immutable and thus thread-safe. You can access its properties from any thread.
+/// - Note: The public interface is read-only and immutable. You can access the image from any thread
+///   unless ownership has been transferred to an ImageEditor through editConsuming or createConsuming. The editor mutates
+///   that instance directly, so access to both the editor and the image must stay on the same thread.
 class ImageContainer final {
 private:
     std::atomic<size_t> _referenceCounter;
@@ -147,6 +149,7 @@ private:
     union {
         std::byte* fn_nonnull _contents;
         uint8_t* fn_nonnull _uint8Contents;
+        uint16_t* fn_nonnull _uint16Contents;
         _Float16* fn_nonnull _float16Contents;
         float* fn_nonnull _float32Contents;
     };
@@ -163,7 +166,7 @@ private:
             };
     
             struct {
-                const void* fn_nonnull buffer;
+                const void* fn_nonnull buffer fn_sized_by(bufferSize);
                 long bufferSize;
             };
         };
@@ -200,6 +203,7 @@ private:
     
     void _sRGBToLinear(bool preserveAlpha);
     void _linearToSRGB(bool preserveAlpha);
+    void _linearToUInt8sRGB(bool preserveAlpha);
     
 public:
     static ImageContainer* fn_nonnull create(const void* fn_nonnull contents, long width, long height, ImagePixelFormat pixelFormat) SWIFT_RETURNS_RETAINED;
@@ -245,6 +249,7 @@ public:
     
     ImageContainer* fn_nonnull createSRGBToLinearConverted(bool preserveAlpha) SWIFT_NAME(createSRGBToLinearConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
     ImageContainer* fn_nonnull createLinearToSRGBConverted(bool preserveAlpha) SWIFT_NAME(createLinearToSRGBConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createLinearToUInt8sRGBConverted(bool preserveAlpha) SWIFT_NAME(createLinearToUInt8sRGBConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
     
     /// Estimates number of possible mip levels.
     long calculateMipLevelCount();

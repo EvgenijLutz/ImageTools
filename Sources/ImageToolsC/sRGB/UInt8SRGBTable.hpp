@@ -9,6 +9,9 @@
 
 #include <ImageToolsC/Common.hpp>
 
+// float->sRGB8 using SSE2 (and a table)
+// https://gist.github.com/rygorous/2203834
+
 
 /// Enabling this flag significantly improves `sRGB <-> linear` space conversion performance (almost instant) for `uint8` `ImageContainer`s.
 #define USE_UINT8_TABLE 1
@@ -37,6 +40,9 @@ struct uint8_srgb_linear_value {
 ///  If you access the ``srgb`` or ``fpSRGB`` property, the the `source value` is in `linear` space.
 extern uint8_srgb_linear_value uint8Table[256];
 
+extern _Float16 uint8_srgb_to_float16_linear[256];
+extern float uint8_srgb_to_float32_linear[256];
+
 
 static inline float fromLinearToSRGB(float linear) {
     if (linear < 0.0031308f) {
@@ -54,6 +60,12 @@ static inline float fromSRGBToLinear(float sRGB) {
     
     return std::pow((sRGB + 0.055f) / 1.055f, 2.4f);
 }
+
+
+float srgb8_to_float(uint8_t val);
+uint8_t float_to_srgb8(float in);
+uint8_t float_to_srgb8_var2(float in);
+uint8_t float_to_srgb8_ref_int(float f);
 
 
 void printUInt8Table();

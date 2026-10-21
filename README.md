@@ -14,6 +14,8 @@ tinyexr is used without its zlib implementation in _miniz.c_ and _miniz.h_. Inst
 
 Although both libpng and stb_image support loading _.png_ images, libpng is prioritised, since it also loads ICC profile data that gives more color accuracy and allows precise color profile conversion with LittleCMS.
 
+Some of ImageTools code also uses [rygorous](https://gist.github.com/rygorous)'s [linear float32 <-> uint sRGB](https://gist.github.com/rygorous/2203834) components convertsion distributed under public domain. The original file was modified to merge into ImageTools APIs.
+
 Sometimes you need to clear the SwiftPM cache at `~/Library/org.swift.swiftpm`  because some dependency tags were re-released.
 
 
@@ -32,7 +34,7 @@ https://github.com/EvgenijLutz/ImageTools.git
 ```
 3. Choose your dependency rule and you're good to go!
 
-Or add it as a dependency in your `Package.swift` file:
+Alternatively, add the package as a dependency in your `Package.swift` file:
 ```swift
 dependencies: [
     .package(url: "https://github.com/EvgenijLutz/ImageTools.git", from: "1.0.18")
@@ -62,10 +64,15 @@ func loadImage(path: String) async throws -> CGImage {
 ```
 
 ## Architecture
-In the heart of the package lays the `ImageContainer` class. This object is thread-safe. 
-`ImageEditor` allows you to perform mutations to a copy of an `ImageContainer`.
+At the heart of the package is `ImageContainer`, which exposes a read-only, immutable interface and is thread-safe as long as it is not consumed by an editor. `ImageEditor` mutates an `ImageContainer` and is not thread-safe.
 
-## TODO
+Creating an editor from an image or calling `edit` or `create` edits a copy. Calling `editConsuming` or `createConsuming` instead transfers ownership of the original `ImageContainer` instance to the editor. The editor then mutates that instance directly, so the image is no longer thread-safe either.
+
+In C++, you can still access the transferred image on the same thread as the editor, but must not call `ImageContainerRelease` for the reference whose ownership was transferred. To keep accessing the image after the editor releases it (when the editor is destroyed or replaces its image), call `ImageContainerRetain` before that release and later balance your retained reference with `ImageContainerRelease`. Otherwise, stop accessing the image before it is destroyed. Retaining the image extends its lifetime; it does not make concurrent access safe.
+
+The Swift wrapper declares the image parameter of `editConsuming` as `consuming` to express the ownership transfer.
+
+## TODOs
 Include the following libraries:
 - [libavif](https://github.com/aomediacodec/libavif)
 - [libwebp](https://github.com/webmproject/libwebp)

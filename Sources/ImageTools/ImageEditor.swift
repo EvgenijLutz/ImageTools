@@ -10,7 +10,12 @@ import ImageToolsC
 
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
-public extension ImageEditor {
+@safe public extension ImageEditor {
+    static func create(consuming image: consuming ImageContainer) -> ImageEditor {
+        return .__createConsumingUnsafe(image)
+    }
+    
+    
     static func load(path: String, assumedColorProfile: LCMSColorProfile? = nil, assumeSRGB: Bool = true) throws -> sending ImageEditor {
         var error = ImageToolsError()
         let image: ImageEditor? = path.withCString { cString in
@@ -35,6 +40,12 @@ public extension ImageEditor {
         }
         
         return image
+    }
+    
+    
+    /// Consumes image for editing.
+    func edit(consuming image: consuming ImageContainer) {
+        __editConsumingUnsafe(image)
     }
     
     

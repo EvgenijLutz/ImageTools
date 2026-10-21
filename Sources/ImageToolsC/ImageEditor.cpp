@@ -21,12 +21,17 @@ ImageEditor::~ImageEditor() {
 }
 
 
-ImageEditor* fn_nonnull ImageEditor::create(ImageContainer* fn_nonnull image) {
+ImageEditor* fn_nonnull ImageEditor::create(ImageContainer* fn_nonnull image fn_noescape) {
     return new ImageEditor(image->copy());
 }
 
 
-ImageEditor* fn_nonnull ImageEditor::create(ImageEditor* fn_nonnull editor) {
+ImageEditor* fn_nonnull ImageEditor::createConsuming(ImageContainer* fn_nonnull image) {
+    return new ImageEditor(image);
+}
+
+
+ImageEditor* fn_nonnull ImageEditor::create(ImageEditor* fn_nonnull editor fn_noescape) {
     return new ImageEditor(editor->_image->copy());
 }
 
@@ -70,6 +75,16 @@ void ImageEditor::edit(ImageContainer* fn_nonnull image) {
     
     ImageContainerRelease(_image);
     _image = image->copy();
+}
+
+
+void ImageEditor::editConsuming(ImageContainer* fn_nonnull image) {
+    if (_image == image) {
+        return;
+    }
+    
+    ImageContainerRelease(_image);
+    _image = image;
 }
 
 
@@ -234,6 +249,10 @@ void ImageEditor::sRGBToLinear(bool preserveAlpha) {
 
 void ImageEditor::linearToSRGB(bool preserveAlpha) {
     _image->_linearToSRGB(preserveAlpha);
+}
+
+void ImageEditor::linearToUInt8sRGB(bool preserveAlpha) {
+    _image->_linearToUInt8sRGB(preserveAlpha);
 }
 
 

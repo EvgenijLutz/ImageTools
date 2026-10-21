@@ -28,13 +28,31 @@ private:
     friend void ImageEditorRelease(ImageEditor* fn_nullable editor);
     
 public:
-    static ImageEditor* fn_nonnull create(ImageContainer* fn_nonnull image) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
-    static ImageEditor* fn_nonnull create(ImageEditor* fn_nonnull editor) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nonnull create(ImageContainer* fn_nonnull image fn_noescape) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nonnull createConsuming(ImageContainer* fn_nonnull image) SWIFT_NAME(__createConsumingUnsafe(_:)) SWIFT_UNSAFE SWIFT_RETURNS_RETAINED;
+    static ImageEditor* fn_nonnull create(ImageEditor* fn_nonnull editor fn_noescape) SWIFT_NAME(init(_:)) SWIFT_RETURNS_RETAINED;
     
     static ImageEditor* fn_nullable load(const char* fn_nullable path fn_noescape, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(path:_:_:_:)) SWIFT_RETURNS_RETAINED;
     static ImageEditor* fn_nullable load(const char* fn_nullable buffer fn_noescape, long bufferSize, LCMSColorProfile* fn_nullable assumedColorProfile, bool assumeSRGB, ImageToolsError* fn_nullable error fn_noescape = nullptr) SWIFT_NAME(__loadUnsafe(buffer:size:_:_:_:)) SWIFT_RETURNS_RETAINED;
     
+    /// Takes image copy for editing.
     void edit(ImageContainer* fn_nonnull image);
+    
+    /// Consumes image for editing.
+    ///
+    /// The editor takes ownership of the specified image and mutates it directly, making the image
+    /// no longer thread-safe. In C++, you may still access the image on the same thread as the editor,
+    /// but must not call ImageContainerRelease for the reference transferred to the editor.
+    ///
+    /// To keep accessing the image after the editor releases it (when destroyed or when replacing its
+    /// image), call ImageContainerRetain before that release and later release your retained reference.
+    /// Otherwise, do not access the image after its destruction. Retaining it only extends its lifetime;
+    /// it does not make concurrent access safe.
+    ///
+    /// The Swift wrapper uses a consuming parameter to express this ownership transfer.
+    void editConsuming(ImageContainer* fn_nonnull image) SWIFT_NAME(__editConsumingUnsafe(_:));
+    
+    /// Edits a copy of the specified editor's image.
     void edit(ImageEditor* fn_nonnull editor);
     
     [[nodiscard("Don't forget to release the image using the ImageContainerRelease function.")]]
@@ -81,7 +99,10 @@ public:
     
     void sRGBToLinear(bool preserveAlpha) SWIFT_NAME(sRGBToLinear(preserveAlpha:));
     void linearToSRGB(bool preserveAlpha) SWIFT_NAME(linearToSRGB(preserveAlpha:));
-} FN_SWIFT_INTERFACE(ImageEditor);
+    void linearToUInt8sRGB(bool preserveAlpha) SWIFT_NAME(linearToUInt8sRGB(preserveAlpha:));
+}
+FN_SWIFT_INTERFACE(ImageEditor)
+SWIFT_SAFE;
 
 
 FN_DEFINE_SWIFT_INTERFACE(ImageEditor)

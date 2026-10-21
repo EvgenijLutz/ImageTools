@@ -11,7 +11,7 @@
 #include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
 #include "Threading.hpp"
-#include "UInt8SRGBTable.hpp"
+#include "sRGB/UInt8SRGBTable.hpp"
 #include "Timing.hpp"
 #include <assert.h>
 
@@ -2121,9 +2121,12 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
             }
 #else
             for (auto index = 0; index < numPixels; index++) {
+#if 0
+#else
                 halfData[0] = fromLinearToSRGB(halfData[0]);
                 halfData[1] = fromLinearToSRGB(halfData[1]);
                 halfData[2] = fromLinearToSRGB(halfData[2]);
+#endif
                 halfData += 4;
             }
 #endif
@@ -2186,6 +2189,89 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
         } CONCURRENT_LOOP_END
     }
     
+}
+
+
+void ImageContainer::_linearToUInt8sRGB(bool preserveAlpha) {
+    LCMSColorProfileRelease(_colorProfile);
+    _colorProfile = nullptr;
+    _sRGB = true;
+    
+    auto numPixels = _width * _height * _depth;
+    auto totalComponents = _width * _height * _depth * _pixelFormat.numComponents;
+    
+    auto currentSize = _width * _height * _depth * _pixelFormat.getSize();
+    auto targetSize = _width * _height * _depth * _pixelFormat.numComponents * 1;
+    
+    if (_pixelFormat.componentType == PixelComponentType::uint8) {
+        uint8_t* uintData = _uint8Contents;
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                uintData[0] = uint8Table[uintData[0]].srgb;
+                uintData[1] = uint8Table[uintData[1]].srgb;
+                uintData[2] = uint8Table[uintData[2]].srgb;
+                uintData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                // TODO: Replace with the u8l_to_u8sRGB table for cache efficiency
+                *uintData = uint8Table[*uintData].srgb;
+                uintData += 1;
+            }
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float16) {
+        uint8_t* uintData = _uint8Contents;
+        _Float16* halfData = _float16Contents;
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                uintData[0] = float_to_srgb8_var2(halfData[0]);
+                uintData[1] = float_to_srgb8_var2(halfData[1]);
+                uintData[2] = float_to_srgb8_var2(halfData[2]);
+                uintData[3] = static_cast<uint8_t>(halfData[3] * 255.0f);
+                uintData += 4;
+                halfData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *uintData = float_to_srgb8_var2(*halfData);
+                uintData += 1;
+                halfData += 1;
+            }
+        }
+    }
+    else if (_pixelFormat.componentType == PixelComponentType::float32) {
+        uint8_t* uintData = _uint8Contents;
+        float* floatData = _float32Contents;
+        
+        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
+            for (auto index = 0; index < numPixels; index++) {
+                uintData[0] = float_to_srgb8_var2(floatData[0]);
+                uintData[1] = float_to_srgb8_var2(floatData[1]);
+                uintData[2] = float_to_srgb8_var2(floatData[2]);
+                uintData[3] = static_cast<uint8_t>(floatData[3] * 255.0f);
+                uintData += 4;
+                floatData += 4;
+            }
+        }
+        else {
+            for (auto index = 0; index < totalComponents; index++) {
+                *uintData = float_to_srgb8_var2(*floatData);
+                uintData += 1;
+                floatData += 1;
+            }
+        }
+    }
+    
+    // Shrink contents
+    if (targetSize < currentSize) {
+        _contents = static_cast<std::byte*>(std::realloc(_contents, targetSize));
+    }
+    _pixelFormat.componentType = PixelComponentType::uint8;
 }
 
 
@@ -2255,6 +2341,13 @@ ImageContainer* fn_nonnull ImageContainer::createSRGBToLinearConverted(bool pres
 ImageContainer* fn_nonnull ImageContainer::createLinearToSRGBConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED {
     auto imgCopy = copy();
     imgCopy->_linearToSRGB(preserveAlpha);
+    return imgCopy;
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::createLinearToUInt8sRGBConverted(bool preserveAlpha) {
+    auto imgCopy = copy();
+    imgCopy->_linearToUInt8sRGB(preserveAlpha);
     return imgCopy;
 }
 
