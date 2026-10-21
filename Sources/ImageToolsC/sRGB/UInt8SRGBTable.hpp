@@ -8,6 +8,7 @@
 #pragma once
 
 #include <ImageToolsC/Common.hpp>
+#include <simd/simd.h>
 
 // float->sRGB8 using SSE2 (and a table)
 // https://gist.github.com/rygorous/2203834
@@ -66,6 +67,10 @@ float srgb8_to_float(uint8_t val);
 uint8_t float_to_srgb8(float in);
 uint8_t float_to_srgb8_var2(float in);
 uint8_t float_to_srgb8_ref_int(float f);
+
+simd_uchar4 float32x4_to_srgb8(const simd_float4& in);
+simd_uchar4 float16x4_to_srgb8(const simd_half4& in);
+simd_uchar8 float16x8_to_srgb8(const simd_half8& in);
 
 
 void printUInt8Table();

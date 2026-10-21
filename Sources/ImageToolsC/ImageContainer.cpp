@@ -2192,6 +2192,22 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
 }
 
 
+#if DEBUG
+// It's about 8.3x slower in Debug builds, but 1.5x faster in Release builds
+#  define USE_SIMD_EXT 0
+#else
+#  define USE_SIMD_EXT 1
+#endif
+
+#if USE_SIMD_EXT
+#  define on_simd(code) code
+#  define on_simd_or(simd_code, code) simd_code
+#else
+#  define on_simd(code) // do nothing
+#  define on_simd_or(simd_code, code) code
+#endif
+
+
 void ImageContainer::_linearToUInt8sRGB(bool preserveAlpha) {
     LCMSColorProfileRelease(_colorProfile);
     _colorProfile = nullptr;
@@ -2225,9 +2241,33 @@ void ImageContainer::_linearToUInt8sRGB(bool preserveAlpha) {
     else if (_pixelFormat.componentType == PixelComponentType::float16) {
         uint8_t* uintData = _uint8Contents;
         _Float16* halfData = _float16Contents;
-        
-        if (_pixelFormat.numComponents == 4 && preserveAlpha) {
-            for (auto index = 0; index < numPixels; index++) {
+        if (preserveAlpha && _pixelFormat.numComponents == 4) {
+            auto pixelsToProcess = numPixels;
+            on_simd({
+                // Process first part as 8-component vectors
+                auto count = totalComponents / 8;
+                auto rest = totalComponents % 8;
+                simd_uchar8* vectorOut = reinterpret_cast<simd_uchar8*>(_contents);
+                simd_half8* vectorIn = reinterpret_cast<simd_half8*>(_contents);
+                for (auto index = 0; index < count; index++) {
+                    auto a = simd_make_half2((*vectorIn)[3], (*vectorIn)[7]) * 255.0f;
+                    auto v = float16x8_to_srgb8(*vectorIn);
+                    v[3] = a[0];
+                    v[7] = a[1];
+                    *vectorOut = v;
+                    
+                    vectorOut += 1;
+                    vectorIn += 1;
+                }
+                
+                // Process the rest one by one in the next step
+                uintData += count * 8;
+                halfData += count * 8;
+                pixelsToProcess = rest / 4;
+            })
+            
+            // Process pixels one by one
+            for (auto index = 0; index < pixelsToProcess; index++) {
                 uintData[0] = float_to_srgb8_var2(halfData[0]);
                 uintData[1] = float_to_srgb8_var2(halfData[1]);
                 uintData[2] = float_to_srgb8_var2(halfData[2]);
@@ -2237,7 +2277,29 @@ void ImageContainer::_linearToUInt8sRGB(bool preserveAlpha) {
             }
         }
         else {
-            for (auto index = 0; index < totalComponents; index++) {
+            auto componentsToProcess = totalComponents;
+            on_simd({
+                // Process first part as 8-component vectors
+                auto count = totalComponents / 8;
+                auto rest = totalComponents % 8;
+                simd_uchar8* vectorOut = reinterpret_cast<simd_uchar8*>(_contents);
+                simd_half8* vectorIn = reinterpret_cast<simd_half8*>(_contents);
+                for (auto index = 0; index < count; index++) {
+                    auto v = float16x8_to_srgb8(*vectorIn);
+                    *vectorOut = v;
+                    
+                    vectorOut += 1;
+                    vectorIn += 1;
+                }
+                
+                // Process the rest one by one in the next step
+                uintData += count * 8;
+                halfData += count * 8;
+                componentsToProcess = rest;
+            })
+            
+            // Process components one by one
+            for (auto index = 0; index < componentsToProcess; index++) {
                 *uintData = float_to_srgb8_var2(*halfData);
                 uintData += 1;
                 halfData += 1;

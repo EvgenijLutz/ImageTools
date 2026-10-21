@@ -22,6 +22,10 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
+
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #include "UInt8SRGBTable.hpp"
 
 #define IT_USE_SSE2 0
@@ -348,277 +352,208 @@ static __m128i float_to_srgb8_var2_SSE2(__m128 f) {
 #endif
 
 
-// ----
-//
-// Table generation functions. These are not required to run the code; they're just
-// here to show how the tables were computed.
+#if defined(__ARM_NEON)
+// Like the SIMD version, returns four 32-bit lanes containing values in [0, 255].
+static uint32x4_t float32x4_to_srgb8_var2_NEON(float32x4_t f) {
+    const float32x4_t clampmin = vreinterpretq_f32_u32(vdupq_n_u32((127 - 13) << 23));
+    const float32x4_t almostone = vreinterpretq_f32_u32(vdupq_n_u32(0x3f7fffff));
+    
+    // Compare/select preserves SSE MAXPS behavior: NaNs select the lower bound.
+    // Plain NEON vmaxq_f32 would propagate NaNs instead.
+    const float32x4_t clamp1 = vbslq_f32(vcgtq_f32(f, clampmin), f, clampmin);
+    const float32x4_t clamp2 = vminq_f32(clamp1, almostone);
+    const uint32x4_t bits = vreinterpretq_u32_f32(clamp2);
+    const uint32x4_t indices = vsubq_u32(vshrq_n_u32(bits, 20), vdupq_n_u32((127 - 13) * 8));
 
-//#define GENTABLES
+    // NEON has no general gather load, so fetch each table entry separately.
+    const uint32_t entries[4] = {
+        fp32_to_srgb8_tab4[vgetq_lane_u32(indices, 0)],
+        fp32_to_srgb8_tab4[vgetq_lane_u32(indices, 1)],
+        fp32_to_srgb8_tab4[vgetq_lane_u32(indices, 2)],
+        fp32_to_srgb8_tab4[vgetq_lane_u32(indices, 3)]
+    };
+    const uint32x4_t tabval = vld1q_u32(entries);
 
-#ifdef GENTABLES
-
-static void print_table(const char *filename, const char *varname, const uint *table, int nelem)
-{
-    FILE *file = fopen(filename, "w");
-    fprintf(file, "static const uint %s[%d] = {\n", varname, nelem);
-    for (int i=0; i < nelem; i++)
-    {
-        if ((i & 7) == 0)
-            fprintf(file, "   ");
-        fprintf(file, " 0x%08x,", table[i]);
-        if ((i & 7) == 7)
-            fprintf(file, "\n");
-    }
-
-    if ((nelem & 7) != 0)
-        fprintf(file, "\n");
-
-    fprintf(file, "};\n");
-    fclose(file);
+    // Equivalent to PMADDWD: scale * t + bias * 512. Both table halfwords
+    // are below 0x8000, so unsigned 32-bit arithmetic gives the same result.
+    const uint32x4_t bias = vshlq_n_u32(vshrq_n_u32(tabval, 16), 9);
+    const uint32x4_t scale = vandq_u32(tabval, vdupq_n_u32(0xffff));
+    const uint32x4_t t = vandq_u32(vshrq_n_u32(bits, 12), vdupq_n_u32(0xff));
+    return vshrq_n_u32(vmlaq_u32(bias, scale, t), 16);
 }
 
-// Table-generation function for variant 1 above.
-static void make_tab3()
-{
-    static const int nbuckets = 64;
-    static const int bucketsize = 1 << 20;
-    static const int mantshift = 12;
 
-    FP32 f;
-    uint table[nbuckets];
+// Convert directly from binary16 bits, without floating-point arithmetic.
+// The low four bytes contain sRGB results; the upper four bytes are zero.
+static inline uint8x8_t float16x4_to_srgb8_var2_NEON(const float16x4_t& f) {
+    const uint16x4_t bits = vreinterpret_u16_f16(f);
+    const uint16x4_t minval = vdup_n_u16(0x0800); // 2^-13 in binary16.
 
-    double sum_aa = bucketsize;
-    double sum_ab = 0.0, sum_bb = 0.0;
-    for (int i=0; i < bucketsize; i++)
-    {
-        int j = i >> mantshift;
+    // Unsigned encodings above +infinity include positive NaNs and all
+    // negative values (including negative NaNs). Map these to the lower bound.
+    const uint16x4_t valid = vcle_u16(bits, vdup_n_u16(0x7c00));
+    const uint16x4_t positive = vbsl_u16(valid, bits, minval);
+    const uint16x4_t saturated = vcge_u16(positive, vdup_n_u16(0x3c00));
+    const uint16x4_t clamped = vmin_u16(vmax_u16(positive, minval), vdup_n_u16(0x3bff));
 
-        sum_ab += j;
-        sum_bb += j*j;
-    }
+    // Five exponent bits plus the top three mantissa bits select the same
+    // table bucket as binary32. The remaining seven mantissa bits give t/2.
+    const uint16x4_t indices = vsub_u16(vshr_n_u16(clamped, 7), vdup_n_u16((15 - 13) * 8));
+    const uint32_t entries[4] = {
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 0)],
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 1)],
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 2)],
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 3)]
+    };
+    const uint32x4_t tabval = vld1q_u32(entries);
+    const uint16x4_t mantissa = vshl_n_u16(vand_u16(clamped, vdup_n_u16(0x7f)), 1);
 
-    double inv_det = 1.0 / (sum_aa * sum_bb - sum_ab * sum_ab);
-
-    for (int bucket=0; bucket < nbuckets; bucket++)
-    {
-        int start = 0x3b800000 + bucket*bucketsize;
-        double sum_a = 0.0;
-        double sum_b = 0.0;
-
-        // model: a+b*i
-        for (int i=0; i<bucketsize; i++)
-        {
-            int j = i >> mantshift;
-
-            f.u = start + i;
-            float val = float_to_srgb8_ref(f.f) + 0.5f;
-
-            sum_a += val;
-            sum_b += j*val;
-        }
-
-        // solve
-        double solved_a = inv_det * (sum_bb*sum_a - sum_ab*sum_b);
-        double solved_b = inv_det * (sum_aa*sum_b - sum_ab*sum_a);
-
-        double scaled_a = solved_a * 65536.0 / 512.0;
-        double scaled_b = solved_b * 65536.0;
-
-        int int_a = (int) (scaled_a + 0.5f);
-        int int_b = (int) (scaled_b + 0.5f);
-        table[(start / bucketsize) & (nbuckets - 1)] = (int_a << 16) + int_b;
-        printf("%d\n", bucket);
-    }
-
-    print_table("tab.txt", "fp32_to_srgb8_tab3", table, nbuckets);
+    // Inputs >= 1 use binary32's 1-epsilon endpoint (t = 255), rather than
+    // binary16's largest value below 1 (t = 254).
+    const uint16x4_t t = vbsl_u16(saturated, vdup_n_u16(255), mantissa);
+    const uint32x4_t bias = vshlq_n_u32(vshrq_n_u32(tabval, 16), 9);
+    const uint32x4_t product = vmlal_u16(bias, vmovn_u32(tabval), t);
+    const uint16x4_t values = vshrn_n_u32(product, 16);
+    return vmovn_u16(vcombine_u16(values, vdup_n_u16(0)));
 }
 
-// Table-generation function for variant 2 above.
-static void make_tab4()
-{
-    static const int numexp = 13;
-    static const int mantissa_msb = 3;
-    static const int nbuckets = numexp << mantissa_msb;
-    static const int bucketsize = 1 << (23 - mantissa_msb);
-    static const int mantshift = 12;
 
-    FP32 f;
-    uint table[nbuckets];
+// Eight-lane binary16 conversion; all preprocessing stays in one 128-bit vector.
+static inline uint8x8_t float16x8_to_srgb8_var2_NEON(const float16x8_t& f) {
+    const uint16x8_t bits = vreinterpretq_u16_f16(f);
+    const uint16x8_t minval = vdupq_n_u16(0x0800);
 
-    double sum_aa = bucketsize;
-    double sum_ab = 0.0, sum_bb = 0.0;
-    for (int i=0; i < bucketsize; i++)
-    {
-        int j = i >> mantshift;
+    // Map NaNs and negative values to zero, and saturate positive inputs >= 1.
+    const uint16x8_t valid = vcleq_u16(bits, vdupq_n_u16(0x7c00));
+    const uint16x8_t positive = vbslq_u16(valid, bits, minval);
+    const uint16x8_t saturated = vcgeq_u16(positive, vdupq_n_u16(0x3c00));
+    const uint16x8_t clamped = vminq_u16(vmaxq_u16(positive, minval), vdupq_n_u16(0x3bff));
+    const uint16x8_t indices = vsubq_u16(vshrq_n_u16(clamped, 7), vdupq_n_u16((15 - 13) * 8));
 
-        sum_ab += j;
-        sum_bb += j*j;
-    }
+    // NEON has no general gather load; each lane selects one packed bias/scale.
+    const uint32_t entries[8] = {
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 0)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 1)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 2)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 3)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 4)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 5)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 6)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indices, 7)]
+    };
+    const uint32x4_t tabLow = vld1q_u32(entries);
+    const uint32x4_t tabHigh = vld1q_u32(entries + 4);
+    const uint16x8_t mantissa = vshlq_n_u16(vandq_u16(clamped, vdupq_n_u16(0x7f)), 1);
+    // Match binary32's 1-epsilon endpoint for saturated inputs.
+    const uint16x8_t t = vbslq_u16(saturated, vdupq_n_u16(255), mantissa);
 
-    double inv_det = 1.0 / (sum_aa * sum_bb - sum_ab * sum_ab);
-
-    for (int bucket=0; bucket < nbuckets; bucket++)
-    {
-        int start = ((127 - numexp) << 23) + bucket*bucketsize;
-        double sum_a = 0.0;
-        double sum_b = 0.0;
-
-        // model: a+b*i
-        for (int i=0; i<bucketsize; i++)
-        {
-            int j = i >> mantshift;
-
-            f.u = start + i;
-            float val = float_to_srgb8_ref(f.f) + 0.5f;
-
-            sum_a += val;
-            sum_b += j*val;
-        }
-
-        // solve
-        double solved_a = inv_det * (sum_bb*sum_a - sum_ab*sum_b);
-        double solved_b = inv_det * (sum_aa*sum_b - sum_ab*sum_a);
-
-        double scaled_a = solved_a * 65536.0 / 512.0;
-        double scaled_b = solved_b * 65536.0;
-
-        int int_a = (int) (scaled_a + 0.5f);
-        int int_b = (int) (scaled_b + 0.5f);
-        table[bucket] = (int_a << 16) + int_b;
-        printf("%d\n", bucket);
-    }
-
-    print_table("tab4.txt", "fp32_to_srgb8_tab4", table, nbuckets);
+    // Widen only for interpolation, then pack all eight results in lane order.
+    const uint32x4_t biasLow = vshlq_n_u32(vshrq_n_u32(tabLow, 16), 9);
+    const uint32x4_t biasHigh = vshlq_n_u32(vshrq_n_u32(tabHigh, 16), 9);
+    const uint32x4_t productLow = vmlal_u16(biasLow, vmovn_u32(tabLow), vget_low_u16(t));
+    const uint32x4_t productHigh = vmlal_u16(biasHigh, vmovn_u32(tabHigh), vget_high_u16(t));
+    const uint16x8_t values = vcombine_u16(vshrn_n_u32(productLow, 16), vshrn_n_u32(productHigh, 16));
+    return vmovn_u16(values);
 }
 
-#endif
 
 #if 0
-int main()
-{
-#ifdef GENTABLES
-    // generate the tables
-    make_tab3();
-    make_tab4();
-#endif
+// Sixteen-lane binary16 conversion, packed as val[0] followed by val[1].
+static inline uint8x16_t float16x8x2_to_srgb8_var2_NEON(const float16x8x2_t& f) {
+    const uint16x8_t bitsLow = vreinterpretq_u16_f16(f.val[0]);
+    const uint16x8_t bitsHigh = vreinterpretq_u16_f16(f.val[1]);
+    const uint16x8_t minval = vdupq_n_u16(0x0800);
+    const uint16x8_t infinity = vdupq_n_u16(0x7c00);
+    const uint16x8_t one = vdupq_n_u16(0x3c00);
+    const uint16x8_t almostone = vdupq_n_u16(0x3bff);
+    const uint16x8_t indexOffset = vdupq_n_u16((15 - 13) * 8);
+    const uint16x8_t mantissaMask = vdupq_n_u16(0x7f);
+    const uint16x8_t endpoint = vdupq_n_u16(255);
 
-    // First, verify that conversion round-trip works. This is an
-    // obvious and important constraint.
-    for (int i=0; i < 256; i++)
-    {
-        float f = srgb8_to_float(i);
-        int ref = float_to_srgb8_ref_int(f);
-        int var1 = float_to_srgb8(f);
-        int var2 = float_to_srgb8_var2(f);
+    // Map NaNs and negative values to zero, and saturate positive inputs >= 1.
+    const uint16x8_t validLow = vcleq_u16(bitsLow, infinity);
+    const uint16x8_t validHigh = vcleq_u16(bitsHigh, infinity);
+    const uint16x8_t positiveLow = vbslq_u16(validLow, bitsLow, minval);
+    const uint16x8_t positiveHigh = vbslq_u16(validHigh, bitsHigh, minval);
+    const uint16x8_t saturatedLow = vcgeq_u16(positiveLow, one);
+    const uint16x8_t saturatedHigh = vcgeq_u16(positiveHigh, one);
+    const uint16x8_t clampedLow = vminq_u16(vmaxq_u16(positiveLow, minval), almostone);
+    const uint16x8_t clampedHigh = vminq_u16(vmaxq_u16(positiveHigh, minval), almostone);
+    const uint16x8_t indicesLow = vsubq_u16(vshrq_n_u16(clampedLow, 7), indexOffset);
+    const uint16x8_t indicesHigh = vsubq_u16(vshrq_n_u16(clampedHigh, 7), indexOffset);
 
-        if (ref != i || var1 != i || var2 != i)
-        {
-            printf("invertability broken! i=%d ref=%d var1=%d var2=%d\n", i, ref, var1, var2);
-            return 1;
-        }
-    }
+    // NEON has no general gather load; fetch packed bias/scale for all 16 lanes.
+    const uint32_t entries[16] = {
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 0)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 1)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 2)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 3)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 4)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 5)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 6)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesLow, 7)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 0)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 1)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 2)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 3)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 4)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 5)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 6)],
+        fp32_to_srgb8_tab4[vgetq_lane_u16(indicesHigh, 7)]
+    };
+    const uint32x4_t tab0 = vld1q_u32(entries);
+    const uint32x4_t tab1 = vld1q_u32(entries + 4);
+    const uint32x4_t tab2 = vld1q_u32(entries + 8);
+    const uint32x4_t tab3 = vld1q_u32(entries + 12);
+    const uint16x8_t mantissaLow = vshlq_n_u16(vandq_u16(clampedLow, mantissaMask), 1);
+    const uint16x8_t mantissaHigh = vshlq_n_u16(vandq_u16(clampedHigh, mantissaMask), 1);
 
-    // Loop over whole 32-bit range, checking whether error is within allowed bounds.
-    // At the same time, we also test whether float->sRGB8 conversion is monotonic.
-    // To make the latter easy, we traverse the range starting from the first "positive"
-    // NaN (which maps to 0), then going over all negative values, finally looping back
-    // to 0 and positive values. That way, we see the whole range in increasing order of
-    // return values.
-    static const int nvar = 2; // number of variants we're testing
-    static const float max_abs_err = 0.6f;
-    float maxerr[nvar] = { 0 };
-    uint maxerrat[nvar] = { 0 };
-    int prev[nvar] = { 0 };
+    // Match binary32's 1-epsilon endpoint for saturated inputs.
+    const uint16x8_t tLow = vbslq_u16(saturatedLow, endpoint, mantissaLow);
+    const uint16x8_t tHigh = vbslq_u16(saturatedHigh, endpoint, mantissaHigh);
 
-    uint start = (255 << 23) + 1; // first NaN
-    uint u = start;
-
-    printf("Scalar\n");
-
-    do
-    {
-        FP32 f;
-        int res[nvar];
-
-        f.u = u;
-        float ref_val = float_to_srgb8_ref(f.f);
-
-        res[0] = float_to_srgb8(f.f);
-        res[1] = float_to_srgb8_var2(f.f);
-
-        for (int i=0; i < nvar; i++)
-        {
-            float err = fabs(res[i] - ref_val);
-            if (err >= max_abs_err)
-            {
-                printf("err=%f at u=%08x for variant %d, must be less than %f!\n", err, u, i + 1, max_abs_err);
-                return 1;
-            }
-
-            if (err >= maxerr[i])
-            {
-                maxerr[i] = err;
-                maxerrat[i] = u;
-            }
-
-            if (res[i] < prev[i])
-            {
-                printf("monotonicity violated at u=%08x for variant %d! result=%d prev=%d\n", u, i + 1, res[i], prev[i]);
-                return 1;
-            }
-            prev[i] = res[i];
-        }
-
-        u++;
-        if ((u & 0xffffff) == 1)
-            printf("  %02x\n", u >> 24);
-    } while (u != start);
-
-    printf("SIMD\n");
-
-    do
-    {
-        __m128 ssein;
-        __m128i sseout[2];
-        __m128i ref[2];
-
-        for (uint j=0; j < 4; j++)
-        {
-            ssein.m128_u32[j] = u + j;
-
-            FP32 f;
-            f.u = u + j;
-            ref[0].m128i_u32[j] = float_to_srgb8(f.f);
-            ref[1].m128i_u32[j] = float_to_srgb8_var2(f.f);
-        }
-
-        sseout[0] = float_to_srgb8_SSE2(ssein);
-        sseout[1] = float_to_srgb8_var2_SSE2(ssein);
-
-        for (int i=0; i < nvar; i++)
-        {
-            for (uint j=0; j < 4; j++)
-            {
-                uint simd = sseout[i].m128i_u32[j];
-                uint scalar = ref[i].m128i_u32[j];
-                if (simd != scalar)
-                {
-                    printf("SIMD/scalar mismatch at u=%08x for variant %d: scalar=%d, SIMD=%d\n", u + j, i + 1, scalar, simd);
-                    return 1;
-                }
-            }
-        }
-
-        u += 4;
-        if ((u & 0xffffff) == 1)
-            printf("  %02x\n", u >> 24);
-    } while (u != start);
-
-    printf("\nAll done!\n\n");
-
-    for (int i=0; i < nvar; i++)
-        printf("variant %d: max error %f at 0x%08x\n", i+1, maxerr[i], maxerrat[i]);
-
-    return 0;
+    // Widen only for interpolation, then pack val[0] followed by val[1].
+    const uint32x4_t bias0 = vshlq_n_u32(vshrq_n_u32(tab0, 16), 9);
+    const uint32x4_t bias1 = vshlq_n_u32(vshrq_n_u32(tab1, 16), 9);
+    const uint32x4_t bias2 = vshlq_n_u32(vshrq_n_u32(tab2, 16), 9);
+    const uint32x4_t bias3 = vshlq_n_u32(vshrq_n_u32(tab3, 16), 9);
+    const uint32x4_t product0 = vmlal_u16(bias0, vmovn_u32(tab0), vget_low_u16(tLow));
+    const uint32x4_t product1 = vmlal_u16(bias1, vmovn_u32(tab1), vget_high_u16(tLow));
+    const uint32x4_t product2 = vmlal_u16(bias2, vmovn_u32(tab2), vget_low_u16(tHigh));
+    const uint32x4_t product3 = vmlal_u16(bias3, vmovn_u32(tab3), vget_high_u16(tHigh));
+    const uint16x8_t valuesLow = vcombine_u16(vshrn_n_u32(product0, 16), vshrn_n_u32(product1, 16));
+    const uint16x8_t valuesHigh = vcombine_u16(vshrn_n_u32(product2, 16), vshrn_n_u32(product3, 16));
+    return vcombine_u8(vmovn_u16(valuesLow), vmovn_u16(valuesHigh));
 }
 #endif
+
+#endif
+
+
+simd_uchar4 float32x4_to_srgb8(const simd_float4& in) {
+#if defined(__ARM_NEON)
+    auto v = float32x4_to_srgb8_var2_NEON(in);
+    return simd_make_uchar4(v);
+#else
+#error Use float_to_srgb8_var2_SSE2 instead
+#endif
+}
+
+
+simd_uchar4 float16x4_to_srgb8(const simd_half4& in) {
+#if defined(__ARM_NEON)
+    auto v = float16x4_to_srgb8_var2_NEON(in);
+    return simd_make_uchar4(v);
+#else
+#error Use float_to_srgb8_var2_SSE2 instead
+#endif
+}
+
+
+simd_uchar8 float16x8_to_srgb8(const simd_half8& in) {
+#if defined(__ARM_NEON)
+    return float16x8_to_srgb8_var2_NEON(in);
+#else
+#error Use float_to_srgb8_var2_SSE2 instead
+#endif
+}
