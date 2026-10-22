@@ -5,7 +5,7 @@ import PackageDescription
 
 
 let dependencies: [Package.Dependency] = {
-#if false
+#if true
     [
         .package(url: "https://github.com/EvgenijLutz/FastTGA.git", from: "1.2.0"),
         .package(url: "https://github.com/EvgenijLutz/JPEGTurbo.git", from: "3.2.0"),

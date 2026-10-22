@@ -1660,8 +1660,9 @@ void ImageContainer::_resampleLanczos(float quality, long width, long height, lo
         return;
     }
     
-    if (_pixelFormat.componentType == PixelComponentType::float16 && depth == 1 && (_pixelFormat.numComponents == 4 || _pixelFormat.numComponents == 2 || _pixelFormat.numComponents == 1) && (int)quality == 3 && renormalize == false) {
-        _resampleLanczos3_2d(width, height);
+    // TODO: It does not respect if it's sRGB
+    if (_pixelFormat.componentType == PixelComponentType::float16 && depth == 1 && (int)quality == 3 && renormalize == false) {
+        _resampleLanczos3_2d_half(width, height);
         return;
     }
     

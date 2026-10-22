@@ -1,5 +1,5 @@
 //
-//  resampleLanczos3.cpp
+//  lanczos3_half.cpp
 //  ImageTools
 //
 //  Created by Evgenij Lutz on 19.10.26.
@@ -22,9 +22,21 @@
 // https://clang.llvm.org/docs/LanguageExtensions.html#langext-loop-hint-optimizations
 
 
+#define LANCZOS_CONCURRENT 1
+
+
+#if 1
+#  define LANCZOS_LOOP_START(_start, _end, _index_name) CONCURRENT_LOOP_START(_start, _end, _index_name)
+#  define LANCZOS_LOOP_END CONCURRENT_LOOP_END
+#else
+#  define LANCZOS_LOOP(_start, _end, _index_name) for (auto _index_name = _start; _index_name < _end; _index_name++)
+#  define LANCZOS_LOOP_END
+#endif
+
+
 static _Float16 w3Table[6] = { 0.024261, -0.135132, 0.607910, 0.607910, -0.135132, 0.024261 };
 
-static inline simd_half4 _sampleLanczosX_a3_float16_4(int left, int right, int width, simd_half4* fn_nonnull row fn_noescape) {
+static inline simd_half4 _sampleLanczos_a3_float16_4(int left, int right, int width, simd_half4* fn_nonnull row fn_noescape) {
     auto sum = simd_make_half4(0, 0, 0, 0);
     _Float16 totalWeight = 0.0;
     int pos = 0;
@@ -75,7 +87,80 @@ static inline simd_half4 _sampleLanczosX_a3_float16_4(int left, int right, int w
     return sum / totalWeight;
 }
 
-static inline simd_half2 _sampleLanczosX_a3_float16_2(int left, int right, int width, simd_half2* fn_nonnull row fn_noescape) {
+
+// Horizontal pass time: 0.6813s
+// Vertical pass time: 0.3245s
+// Downsampling time taken: 1.0058529166672088s
+
+// Horizontal pass time: 0.1753s
+// Vertical pass time: 0.0946s
+// Downsampling time taken: 0.2699987083360611s
+
+#define HALF3_PIXEL_SIZE 6
+
+static inline simd_half3 _sampleLanczos_a3_float16_3(int left, int right, int width, _Float16* fn_nonnull row fn_noescape) {
+    auto sum = simd_make_half3(0, 0, 0);
+    auto value = simd_make_half3(0, 0, 0);
+    _Float16 totalWeight = 0.0;
+    int pos = 0;
+    
+    // `left` is past the left edge of the row
+    auto pastLeftEdge = left;
+    if (left < 0) {
+        pastLeftEdge = 0;
+    }
+    
+    // `left` is past the right edge of the row
+    auto pastRightEdge = right;
+    auto rightEdge = width - 1;
+    if (right > rightEdge) {
+        right = rightEdge;
+    }
+    
+    // Clamp left
+    if (left < pastLeftEdge) {
+        std::memcpy(&value, row + 0*3, HALF3_PIXEL_SIZE);
+    }
+    while (left < pastLeftEdge) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        sum += value * w;
+        totalWeight += w;
+        
+        left += 1;
+    }
+    auto mem = row + left*3;
+    while (left <= right) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        std::memcpy(&value, mem, HALF3_PIXEL_SIZE);
+        sum += value * w;
+        totalWeight += w;
+        
+        left += 1;
+        mem += 3;
+    }
+    // Clamp right
+    if (left <= pastRightEdge) {
+        std::memcpy(&value, row + rightEdge*3, HALF3_PIXEL_SIZE);
+    }
+    while (left <= pastRightEdge) {
+        auto w = w3Table[pos];
+        pos += 1;
+        
+        sum += value * w;
+        totalWeight += w;
+        
+        left += 1;
+    }
+    
+    return sum / totalWeight;
+}
+
+
+static inline simd_half2 _sampleLanczos_a3_float16_2(int left, int right, int width, simd_half2* fn_nonnull row fn_noescape) {
     auto sum = simd_make_half2(0, 0);
     _Float16 totalWeight = 0.0;
     int pos = 0;
@@ -127,7 +212,7 @@ static inline simd_half2 _sampleLanczosX_a3_float16_2(int left, int right, int w
 }
 
 
-static inline _Float16 _sampleLanczosX_a3_float16_1(int left, int right, int width, _Float16* fn_nonnull row fn_noescape) {
+static inline _Float16 _sampleLanczos_a3_float16_1(int left, int right, int width, _Float16* fn_nonnull row fn_noescape) {
     _Float16 sum = 0;
     _Float16 totalWeight = 0.0;
     int pos = 0;
@@ -179,7 +264,13 @@ static inline _Float16 _sampleLanczosX_a3_float16_1(int left, int right, int wid
 }
 
 
-void ImageContainer::_resampleLanczos3_2d(long width, long height) {
+struct TemporaryStorageAllocator final {
+    TemporaryStorageAllocator() { }
+    ~TemporaryStorageAllocator() { }
+};
+
+
+void ImageContainer::_resampleLanczos3_2d_half(long width, long height) {
     // Calculate intermediate memory
     auto sourceSize = _width * _height * _pixelFormat.getSize();
     auto targetSize = width * height * _pixelFormat.getSize();
@@ -210,55 +301,64 @@ void ImageContainer::_resampleLanczos3_2d(long width, long height) {
     // Horizontal pass
     auto horizontalPassStart = timing_get_current_media_time();
     if (_pixelFormat.numComponents == 4) {
-        CONCURRENT_LOOP_START(0, _height, y) {
-        //for (auto y = 0; y < _height; y++) {
+        LANCZOS_LOOP_START(0, _height, y) {
             simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + y * _width;
             simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleX - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
+                auto pixel = _sampleLanczos_a3_float16_4(left, left + 5, intWidth, row);
                 *outPlane = pixel;
                 srcX += scaleX;
                 outPlane += _height;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
+    }
+    else if (_pixelFormat.numComponents == 3) {
+        LANCZOS_LOOP_START(0, _height, y) {
+            _Float16* row = reinterpret_cast<_Float16*>(sourceContents) + y * _width * 3;
+            _Float16* outPlane = reinterpret_cast<_Float16*>(destinationContents) + y * 3;
+            
+            auto srcX = static_cast<float>((0 + 0.5) * scaleX - 0.5);
+            for (auto x = 0; x < width; x++) {
+                int left = static_cast<int>(floor(srcX)) - 3 + 1;
+                auto pixel = _sampleLanczos_a3_float16_3(left, left + 5, intWidth, row);
+                std::memcpy(outPlane, &pixel, HALF3_PIXEL_SIZE);
+                srcX += scaleX;
+                outPlane += _height * 3;
+            }
+        } LANCZOS_LOOP_END
     }
     else if (_pixelFormat.numComponents == 2) {
-        CONCURRENT_LOOP_START(0, _height, y) {
-        //for (auto y = 0; y < _height; y++) {
+        LANCZOS_LOOP_START(0, _height, y) {
             simd_half2* row = reinterpret_cast<simd_half2*>(sourceContents) + y * _width;
             simd_half2* outPlane = reinterpret_cast<simd_half2*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleX - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_2(left, left + 5, intWidth, row);
+                auto pixel = _sampleLanczos_a3_float16_2(left, left + 5, intWidth, row);
                 *outPlane = pixel;
                 srcX += scaleX;
                 outPlane += _height;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
     }
     else if (_pixelFormat.numComponents == 1) {
-        CONCURRENT_LOOP_START(0, _height, y) {
-        //for (auto y = 0; y < _height; y++) {
+        LANCZOS_LOOP_START(0, _height, y) {
             _Float16* row = reinterpret_cast<_Float16*>(sourceContents) + y * _width;
             _Float16* outPlane = reinterpret_cast<_Float16*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleX - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_1(left, left + 5, intWidth, row);
+                auto pixel = _sampleLanczos_a3_float16_1(left, left + 5, intWidth, row);
                 *outPlane = pixel;
                 srcX += scaleX;
                 outPlane += _height;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
     }
     else {
         assert(0 && "Unsupported number of components");
@@ -272,55 +372,64 @@ void ImageContainer::_resampleLanczos3_2d(long width, long height) {
     // Vertical pass
     auto verticalPassStart = timing_get_current_media_time();
     if (_pixelFormat.numComponents == 4) {
-        CONCURRENT_LOOP_START(0, height, y) {
-        //for (auto y = 0; y < height; y++) {
+        LANCZOS_LOOP_START(0, height, y) {
             simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + y * _width;
             simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleY - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intHeight, row);
+                auto pixel = _sampleLanczos_a3_float16_4(left, left + 5, intHeight, row);
                 *outPlane = pixel;
                 srcX += scaleY;
                 outPlane += width;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
+    }
+    else if (_pixelFormat.numComponents == 3) {
+        LANCZOS_LOOP_START(0, height, y) {
+            _Float16* row = reinterpret_cast<_Float16*>(sourceContents) + y * _width * 3;
+            _Float16* outPlane = reinterpret_cast<_Float16*>(destinationContents) + y * 3;
+            
+            auto srcX = static_cast<float>((0 + 0.5) * scaleY - 0.5);
+            for (auto x = 0; x < width; x++) {
+                int left = static_cast<int>(floor(srcX)) - 3 + 1;
+                auto pixel = _sampleLanczos_a3_float16_3(left, left + 5, intHeight, row);
+                std::memcpy(outPlane, &pixel, HALF3_PIXEL_SIZE);
+                srcX += scaleY;
+                outPlane += width * 3;
+            }
+        } LANCZOS_LOOP_END
     }
     else if (_pixelFormat.numComponents == 2) {
-        CONCURRENT_LOOP_START(0, height, y) {
-        //for (auto y = 0; y < height; y++) {
+        LANCZOS_LOOP_START(0, height, y) {
             simd_half2* row = reinterpret_cast<simd_half2*>(sourceContents) + y * _width;
             simd_half2* outPlane = reinterpret_cast<simd_half2*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleY - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_2(left, left + 5, intHeight, row);
+                auto pixel = _sampleLanczos_a3_float16_2(left, left + 5, intHeight, row);
                 *outPlane = pixel;
                 srcX += scaleY;
                 outPlane += width;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
     }
     else if (_pixelFormat.numComponents == 1) {
-        CONCURRENT_LOOP_START(0, height, y) {
-        //for (auto y = 0; y < height; y++) {
+        LANCZOS_LOOP_START(0, height, y) {
             _Float16* row = reinterpret_cast<_Float16*>(sourceContents) + y * _width;
             _Float16* outPlane = reinterpret_cast<_Float16*>(destinationContents) + y;
             
             auto srcX = static_cast<float>((0 + 0.5) * scaleY - 0.5);
             for (auto x = 0; x < width; x++) {
                 int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                auto pixel = _sampleLanczosX_a3_float16_1(left, left + 5, intHeight, row);
+                auto pixel = _sampleLanczos_a3_float16_1(left, left + 5, intHeight, row);
                 *outPlane = pixel;
                 srcX += scaleY;
                 outPlane += width;
             }
-        //}
-        } CONCURRENT_LOOP_END
+        } LANCZOS_LOOP_END
     }
     else {
         assert(0 && "Unsupported number of components");
