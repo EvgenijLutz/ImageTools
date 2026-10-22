@@ -51,7 +51,7 @@ static inline void clamp_xyz(long& x, long width, long& y, long height, long& z,
 
 // MARK: - GetPixel
 
-static inline ImagePixel _getPixel_general(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+ImagePixel _getPixel_general(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
     auto pixel = ImagePixel();
     
     clamp_xyz(x, width, y, height, z, depth);
@@ -141,7 +141,7 @@ static inline ImagePixel _getPixel_float32(long x, long y, long z, long width, l
 
 // MARK: - SetPixel
 
-static inline void _setPixel_general(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
+void _setPixel_general(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType) {
     if ((x < 0 || x >= width) || (y < 0 || y >= height) || (z < 0 || z >= depth)) {
         return;
     }
@@ -280,58 +280,6 @@ static inline _Float16 _sinc_float16(_Float16 x) {
 
 // MARK: - Lanczos X
 
-static _Float16 w3Table[6] = { 0.024261, -0.135132, 0.607910, 0.607910, -0.135132, 0.024261 };
-
-static inline simd_half4 _sampleLanczosX_a3_float16_4(int left, int right, int width, simd_half4* fn_nonnull row fn_noescape) {
-    auto sum = simd_make_half4(0, 0, 0, 0);
-    _Float16 totalWeight = 0.0;
-    int pos = 0;
-    
-    // `left` is past the left edge of the row
-    auto pastLeftEdge = left;
-    if (left < 0) {
-        pastLeftEdge = 0;
-    }
-    
-    // `left` is past the right edge of the row
-    auto pastRightEdge = right;
-    auto rightEdge = width - 1;
-    if (right > rightEdge) {
-        right = rightEdge;
-    }
-    
-    // Negative x - before row bounds
-    while (left < pastLeftEdge) {
-        auto w = w3Table[pos];
-        pos += 1;
-        
-        sum += row[0] * w;
-        totalWeight += w;
-        
-        left += 1;
-    }
-    while (left <= right) {
-        auto w = w3Table[pos];
-        pos += 1;
-        
-        sum += row[left] * w;
-        totalWeight += w;
-        
-        left += 1;
-    }
-    while (left <= pastRightEdge) {
-        auto w = w3Table[pos];
-        pos += 1;
-        
-        sum += row[rightEdge] * w;
-        totalWeight += w;
-        
-        left += 1;
-    }
-    
-    return sum / totalWeight;
-}
-
 static inline ImagePixel _sampleLanczosX_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     int left = floor(x - a + 1);
     int right = floor(x + a);
@@ -460,7 +408,7 @@ static inline ImagePixel _sampleLanczosY_float32(float x, float y, float z, floa
 
 // MARK: - Lanczos Z
 
-static inline ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
+ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize) {
     int left = floor(z - a + 1);
     int right = floor(z + a);
     auto sum = ImagePixel();
@@ -1660,9 +1608,9 @@ void ImageContainer::_resampleLanczos(float quality, long width, long height, lo
         return;
     }
     
-    // TODO: It does not respect if it's sRGB
-    if (_pixelFormat.componentType == PixelComponentType::float16 && depth == 1 && (int)quality == 3 && renormalize == false) {
-        _resampleLanczos3_2d_half(width, height);
+    // TODO: It does not respect if it's sRGB, renormalize is also ignored atm
+    if (_pixelFormat.componentType == PixelComponentType::float16 && (int)quality == 3 /*&& renormalize == false*/) {
+        _resampleLanczos3_half(width, height, depth);
         return;
     }
     
@@ -1705,45 +1653,7 @@ for (auto z = 0; z < _depth; z++) { \
         } \
     } CONCURRENT_LOOP_END \
 }
-    if (componentType == PixelComponentType::float16 && numComponents == 4 && (int)quality == 3 && renormalize == false) {
-#if RESAMPLING_ROW_MAJOR
-        auto intWidth = static_cast<int>(_width);
-        for (auto z = 0; z < _depth; z++) {
-            CONCURRENT_LOOP_START(0, _height, y) {
-            //for (auto y = 0; y < _height; y++) {
-                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents + (z * _height * _width + y * _width) * 4 * 2);
-                simd_half4* outRow = reinterpret_cast<simd_half4*>(destinationContents + (z * _height * width + y * width) * 4 * 2);
-                auto srcX = static_cast<float>((0 + 0.5) * scale.x - 0.5);
-                for (auto x = 0; x < width; x++) {
-                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                    outRow[x] = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
-                    srcX += scale.x;
-                }
-            //}
-            } CONCURRENT_LOOP_END
-        }
-#else
-        auto intWidth = static_cast<int>(_width);
-        for (auto z = 0; z < _depth; z++) {
-            CONCURRENT_LOOP_START(0, _height, y) {
-            //for (auto y = 0; y < _height; y++) {
-                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + z * _height * _width + y * _width;
-                simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + z * _height * width + y;
-                
-                auto srcX = static_cast<float>((0 + 0.5) * scale.x - 0.5);
-                for (auto x = 0; x < width; x++) {
-                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                    auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
-                    *outPlane = pixel;
-                    srcX += scale.x;
-                    outPlane += _height;
-                }
-            //}
-            } CONCURRENT_LOOP_END
-        }
-#endif
-    }
-    else if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_x_func(float16, 1) }
+    if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_x_func(float16, 1) }
     else if (componentType == PixelComponentType::float16 && numComponents == 2) { resample_x_func(float16, 2) }
     else if (componentType == PixelComponentType::float16 && numComponents == 3) { resample_x_func(float16, 3) }
     else if (componentType == PixelComponentType::float16 && numComponents == 4) { resample_x_func(float16, 4) }
@@ -1781,32 +1691,7 @@ for (auto z = 0; z < _depth; z++) { \
         } \
     } CONCURRENT_LOOP_END \
 }
-    if (componentType == PixelComponentType::float16 && numComponents == 4 && (int)quality == 3 && renormalize == false) {
-#if RESAMPLING_ROW_MAJOR
-# error Not implemented
-#else
-        // Write transposed, a bit slower than the previous loop, but helps the second pass
-        auto intWidth = static_cast<int>(_height);
-        for (auto z = 0; z < _depth; z++) {
-            CONCURRENT_LOOP_START(0, height, y) {
-            //for (auto y = 0; y < height; y++) {
-                simd_half4* row = reinterpret_cast<simd_half4*>(sourceContents) + z * _height * width + y * _width;
-                simd_half4* outPlane = reinterpret_cast<simd_half4*>(destinationContents) + z * height * width + y;
-                
-                auto srcX = static_cast<float>((0 + 0.5) * scale.y - 0.5);
-                for (auto x = 0; x < width; x++) {
-                    int left = static_cast<int>(floor(srcX)) - 3 + 1;
-                    auto pixel = _sampleLanczosX_a3_float16_4(left, left + 5, intWidth, row);
-                    *outPlane = pixel;
-                    srcX += scale.x;
-                    outPlane += width;
-                }
-            //}
-            } CONCURRENT_LOOP_END
-        }
-#endif
-    }
-    else if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_y_func(float16, 1) }
+    if (componentType == PixelComponentType::float16 && numComponents == 1) { resample_y_func(float16, 1) }
     else if (componentType == PixelComponentType::float16 && numComponents == 2) { resample_y_func(float16, 2) }
     else if (componentType == PixelComponentType::float16 && numComponents == 3) { resample_y_func(float16, 3) }
     else if (componentType == PixelComponentType::float16 && numComponents == 4) { resample_y_func(float16, 4) }
@@ -2272,6 +2157,7 @@ void ImageContainer::_linearToUInt8sRGB(bool preserveAlpha) {
                 uintData[0] = float_to_srgb8_var2(halfData[0]);
                 uintData[1] = float_to_srgb8_var2(halfData[1]);
                 uintData[2] = float_to_srgb8_var2(halfData[2]);
+                // Undefined behaviour: may overlap
                 uintData[3] = static_cast<uint8_t>(halfData[3] * 255.0f);
                 uintData += 4;
                 halfData += 4;
