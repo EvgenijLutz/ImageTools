@@ -41,6 +41,7 @@ struct uint8_srgb_linear_value {
 ///  If you access the ``srgb`` or ``fpSRGB`` property, the the `source value` is in `linear` space.
 extern uint8_srgb_linear_value uint8Table[256];
 
+extern _Float16 uint8_to_float16[256];
 extern _Float16 uint8_srgb_to_float16_linear[256];
 extern float uint8_srgb_to_float32_linear[256];
 
@@ -69,6 +70,7 @@ uint8_t float_to_srgb8_var2(float in);
 uint8_t float_to_srgb8_ref_int(float f);
 
 simd_uchar4 float32x4_to_srgb8(const simd_float4& in);
+simd_uchar2 float16x2_to_srgb8(const simd_half2& in);
 simd_uchar4 float16x4_to_srgb8(const simd_half4& in);
 simd_uchar8 float16x8_to_srgb8(const simd_half8& in);
 

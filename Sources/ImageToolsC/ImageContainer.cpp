@@ -1608,6 +1608,11 @@ void ImageContainer::_resampleLanczos(float quality, long width, long height, lo
         return;
     }
     
+    if (_pixelFormat.componentType == PixelComponentType::uint8 && (int)quality == 3 /*&& renormalize == false*/) {
+        _resampleLanczos3_uint8(width, height, depth);
+        return;
+    }
+    
     // TODO: It does not respect if it's sRGB, renormalize is also ignored atm
     if (_pixelFormat.componentType == PixelComponentType::float16 && (int)quality == 3 /*&& renormalize == false*/) {
         _resampleLanczos3_half(width, height, depth);
@@ -2078,6 +2083,45 @@ void ImageContainer::_linearToSRGB(bool preserveAlpha) {
 }
 
 
+void ImageContainer::_sRGBToFloat16Linear(bool preserveAlpha) {
+    LCMSColorProfileRelease(_colorProfile);
+    _colorProfile = nullptr;
+    _sRGB = false;
+    
+    if (_pixelFormat.componentType == PixelComponentType::uint8) {
+        auto destinationPixelSize = _pixelFormat.numComponents * getPixelComponentTypeSize(PixelComponentType::float16);
+        auto newSize = _width * _height * _depth * destinationPixelSize;
+        auto newContents = static_cast<_Float16*>(std::malloc(newSize));
+        
+        if (preserveAlpha && _pixelFormat.numComponents == 4) {
+            auto numPixels = _width * _height * _depth;
+            for (auto i = 0; i < numPixels; i+=3) {
+                newContents[i+0] = uint8_srgb_to_float16_linear[_uint8Contents[i+0]];
+                newContents[i+1] = uint8_srgb_to_float16_linear[_uint8Contents[i+1]];
+                newContents[i+2] = uint8_srgb_to_float16_linear[_uint8Contents[i+2]];
+            }
+        }
+        else {
+            auto numItems = _width * _height * _depth * _pixelFormat.numComponents;
+            for (auto i = 0; i < numItems; i++) {
+                auto sRGB = _uint8Contents[i];
+                newContents[i] = uint8_srgb_to_float16_linear[sRGB];
+            }
+        }
+        
+        // Apply changes
+        _pixelFormat.componentType = PixelComponentType::float16;
+        std::free(_contents);
+        _float16Contents = newContents;
+        return;
+    }
+    
+    // Long path
+    _setComponentType(PixelComponentType::float16);
+    _sRGBToLinear(preserveAlpha);
+}
+
+
 #if DEBUG
 // It's about 8.3x slower in Debug builds, but 1.5x faster in Release builds
 #  define USE_SIMD_EXT 0
@@ -2290,6 +2334,13 @@ ImageContainer* fn_nonnull ImageContainer::createSRGBToLinearConverted(bool pres
 ImageContainer* fn_nonnull ImageContainer::createLinearToSRGBConverted(bool preserveAlpha) SWIFT_RETURNS_RETAINED {
     auto imgCopy = copy();
     imgCopy->_linearToSRGB(preserveAlpha);
+    return imgCopy;
+}
+
+
+ImageContainer* fn_nonnull ImageContainer::createSRGBToFloat16LinearConverted(bool preserveAlpha) {
+    auto imgCopy = copy();
+    imgCopy->_sRGBToFloat16Linear(preserveAlpha);
     return imgCopy;
 }
 

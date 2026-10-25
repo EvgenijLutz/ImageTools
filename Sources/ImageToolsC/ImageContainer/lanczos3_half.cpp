@@ -23,17 +23,6 @@
 // https://clang.llvm.org/docs/LanguageExtensions.html#langext-loop-hint-optimizations
 
 
-#define LANCZOS_CONCURRENT 1
-
-#if 1
-#  define LANCZOS_LOOP_START(_start, _end, _index_name) CONCURRENT_LOOP_START(_start, _end, _index_name)
-#  define LANCZOS_LOOP_END CONCURRENT_LOOP_END
-#else
-#  define LANCZOS_LOOP(_start, _end, _index_name) for (auto _index_name = _start; _index_name < _end; _index_name++)
-#  define LANCZOS_LOOP_END
-#endif
-
-
 #define HALF3_PIXEL_SIZE 6
 
 

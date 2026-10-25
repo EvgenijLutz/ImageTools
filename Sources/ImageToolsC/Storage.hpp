@@ -8,6 +8,17 @@
 #include <ImageToolsC/ImageContainer.hpp>
 
 
+#define LANCZOS_CONCURRENT 1
+
+#if 1
+#  define LANCZOS_LOOP_START(_start, _end, _index_name) CONCURRENT_LOOP_START(_start, _end, _index_name)
+#  define LANCZOS_LOOP_END CONCURRENT_LOOP_END
+#else
+#  define LANCZOS_LOOP(_start, _end, _index_name) for (auto _index_name = _start; _index_name < _end; _index_name++)
+#  define LANCZOS_LOOP_END
+#endif
+
+
 ImagePixel _getPixel_general(long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType);
 void _setPixel_general(ImagePixel pixel, long x, long y, long z, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType);
 ImagePixel _sampleLanczosZ_general(float x, float y, float z, float a, long width, long height, long depth, std::byte* fn_nonnull contents, long numComponents, PixelComponentType componentType, bool renormalize);

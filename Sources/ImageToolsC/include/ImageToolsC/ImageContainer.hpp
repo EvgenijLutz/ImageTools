@@ -198,12 +198,14 @@ private:
     bool _flipChannel(long channelIndex, ImageToolsError* fn_nullable error fn_noescape);
     bool _setChannel(long channelIndex, ImageContainer* fn_nonnull sourceImage fn_noescape, long sourceChannelIndex, ImageToolsError* fn_nullable error fn_noescape);
     
+    void _resampleLanczos3_uint8(long width, long height, long depth);
     void _resampleLanczos3_half(long width, long height, long depth);
     void _resampleLanczos(float quality, long width, long height, long depth, bool renormalize);
     void _resample(ResamplingAlgorithm algorithm, float quality, long width, long height, long depth, bool renormalize, void* fn_nullable userInfo fn_noescape, ImageToolsProgressCallback fn_nullable progressCallback fn_noescape);
     
     void _sRGBToLinear(bool preserveAlpha);
     void _linearToSRGB(bool preserveAlpha);
+    void _sRGBToFloat16Linear(bool preserveAlpha);
     void _linearToUInt8sRGB(bool preserveAlpha);
     
 public:
@@ -250,6 +252,7 @@ public:
     
     ImageContainer* fn_nonnull createSRGBToLinearConverted(bool preserveAlpha) SWIFT_NAME(createSRGBToLinearConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
     ImageContainer* fn_nonnull createLinearToSRGBConverted(bool preserveAlpha) SWIFT_NAME(createLinearToSRGBConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
+    ImageContainer* fn_nonnull createSRGBToFloat16LinearConverted(bool preserveAlpha) SWIFT_NAME(createSRGBToFloat16LinearConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
     ImageContainer* fn_nonnull createLinearToUInt8sRGBConverted(bool preserveAlpha) SWIFT_NAME(createLinearToUInt8sRGBConverted(preserveAlpha:)) SWIFT_RETURNS_RETAINED;
     
     /// Estimates number of possible mip levels.

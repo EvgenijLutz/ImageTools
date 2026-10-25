@@ -385,6 +385,41 @@ static uint32x4_t float32x4_to_srgb8_var2_NEON(float32x4_t f) {
 
 // Convert directly from binary16 bits, without floating-point arithmetic.
 // The low four bytes contain sRGB results; the upper four bytes are zero.
+static inline uint8x8_t float16x2_to_srgb8_var2_NEON(const float16x4_t& f) {
+    const uint16x4_t bits = vreinterpret_u16_f16(f);
+    const uint16x4_t minval = vdup_n_u16(0x0800); // 2^-13 in binary16.
+
+    // Unsigned encodings above +infinity include positive NaNs and all
+    // negative values (including negative NaNs). Map these to the lower bound.
+    const uint16x4_t valid = vcle_u16(bits, vdup_n_u16(0x7c00));
+    const uint16x4_t positive = vbsl_u16(valid, bits, minval);
+    const uint16x4_t saturated = vcge_u16(positive, vdup_n_u16(0x3c00));
+    const uint16x4_t clamped = vmin_u16(vmax_u16(positive, minval), vdup_n_u16(0x3bff));
+
+    // Five exponent bits plus the top three mantissa bits select the same
+    // table bucket as binary32. The remaining seven mantissa bits give t/2.
+    const uint16x4_t indices = vsub_u16(vshr_n_u16(clamped, 7), vdup_n_u16((15 - 13) * 8));
+    const uint32_t entries[4] = {
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 0)],
+        fp32_to_srgb8_tab4[vget_lane_u16(indices, 1)],
+        0x0073000d,
+        0x0073000d
+    };
+    const uint32x4_t tabval = vld1q_u32(entries);
+    const uint16x4_t mantissa = vshl_n_u16(vand_u16(clamped, vdup_n_u16(0x7f)), 1);
+
+    // Inputs >= 1 use binary32's 1-epsilon endpoint (t = 255), rather than
+    // binary16's largest value below 1 (t = 254).
+    const uint16x4_t t = vbsl_u16(saturated, vdup_n_u16(255), mantissa);
+    const uint32x4_t bias = vshlq_n_u32(vshrq_n_u32(tabval, 16), 9);
+    const uint32x4_t product = vmlal_u16(bias, vmovn_u32(tabval), t);
+    const uint16x4_t values = vshrn_n_u32(product, 16);
+    return vmovn_u16(vcombine_u16(values, vdup_n_u16(0)));
+}
+
+
+// Convert directly from binary16 bits, without floating-point arithmetic.
+// The low four bytes contain sRGB results; the upper four bytes are zero.
 static inline uint8x8_t float16x4_to_srgb8_var2_NEON(const float16x4_t& f) {
     const uint16x4_t bits = vreinterpret_u16_f16(f);
     const uint16x4_t minval = vdup_n_u16(0x0800); // 2^-13 in binary16.
@@ -534,6 +569,19 @@ simd_uchar4 float32x4_to_srgb8(const simd_float4& in) {
 #if defined(__ARM_NEON)
     auto v = float32x4_to_srgb8_var2_NEON(in);
     return simd_make_uchar4(v);
+#else
+#error Use float_to_srgb8_var2_SSE2 instead
+#endif
+}
+
+
+simd_uchar2 float16x2_to_srgb8(const simd_half2& in) {
+#if defined(__ARM_NEON)
+    auto x = float16x4_t();
+    x[0] = in[0];
+    x[1] = in[1];
+    auto v = float16x2_to_srgb8_var2_NEON(x);
+    return simd_make_uchar2(v);
 #else
 #error Use float_to_srgb8_var2_SSE2 instead
 #endif

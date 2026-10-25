@@ -50,7 +50,7 @@ public extension ImageContainer {
                 
                 let colorSpaceName: CFString = {
                     // CGColorSpace for a single-channel image
-                    if numComponents == 1 {
+                    if numComponents == 1 || numComponents == 2 {
                         if hdr {
                             if srgb {
                                 return CGColorSpace.extendedGray
