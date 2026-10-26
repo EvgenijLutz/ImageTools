@@ -438,7 +438,7 @@ static inline uint8x8_t float16x4_to_srgb8_var2_NEON(const float16x4_t& f) {
         fp32_to_srgb8_tab4[vget_lane_u16(indices, 0)],
         fp32_to_srgb8_tab4[vget_lane_u16(indices, 1)],
         fp32_to_srgb8_tab4[vget_lane_u16(indices, 2)],
-        fp32_to_srgb8_tab4[vget_lane_u16(indices, 3)]
+        0x7c330723 // fp32_to_srgb8_tab4[vget_lane_u16(indices, 3)]
     };
     const uint32x4_t tabval = vld1q_u32(entries);
     const uint16x4_t mantissa = vshl_n_u16(vand_u16(clamped, vdup_n_u16(0x7f)), 1);
@@ -591,6 +591,7 @@ simd_uchar2 float16x2_to_srgb8(const simd_half2& in) {
 simd_uchar4 float16x4_to_srgb8(const simd_half4& in) {
 #if defined(__ARM_NEON)
     auto v = float16x4_to_srgb8_var2_NEON(in);
+    v[3] = in.w * 255;
     return simd_make_uchar4(v);
 #else
 #error Use float_to_srgb8_var2_SSE2 instead

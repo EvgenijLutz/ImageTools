@@ -27,10 +27,12 @@
 #define HALF3_PIXEL_SIZE 6
 #define CHAR3_PIXEL_SIZE 3
 
+#define DEBUG_PASS_TIME 0
+
 
 static _Float16 w3Table[6] = { 0.024261, -0.135132, 0.607910, 0.607910, -0.135132, 0.024261 };
 
-static inline simd_half4 _sampleLanczos_a3_uint8_4(int left, int right, int width, simd_half4* fn_nonnull pixels fn_noescape) {
+static inline simd_half4 _sampleLanczos_a3_uint8_4(simd_half4* fn_nonnull pixels fn_noescape) {
     auto sum = simd_make_half4(0, 0, 0, 0);
     _Float16 totalWeight = 0.0;
     
@@ -46,7 +48,7 @@ static inline simd_half4 _sampleLanczos_a3_uint8_4(int left, int right, int widt
 }
 
 
-static inline simd_half2 _sampleLanczos_a3_uint8_2(int left, int right, int width, simd_half2* fn_nonnull pixels fn_noescape) {
+static inline simd_half2 _sampleLanczos_a3_uint8_2(simd_half2* fn_nonnull pixels fn_noescape) {
     auto sum = simd_make_half2(0, 0);
     _Float16 totalWeight = 0.0;
     
@@ -62,7 +64,7 @@ static inline simd_half2 _sampleLanczos_a3_uint8_2(int left, int right, int widt
 }
 
 
-static inline _Float16 _sampleLanczos_a3_uint8(int left, int right, int width, _Float16* fn_nonnull pixels fn_noescape) {
+static inline _Float16 _sampleLanczos_a3_uint8(_Float16* fn_nonnull pixels fn_noescape) {
     _Float16 sum = 0.0;
     _Float16 totalWeight = 0.0;
     
@@ -352,7 +354,9 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
     auto a8ToF16 = uint8_to_float16;
     
     // Horizontal pass: fastest 0.3s before caching, now 0.17s
+#if DEBUG_PASS_TIME
     auto horizontalPassStart = timing_get_current_media_time();
+#endif
     if (_pixelFormat.numComponents == 4) {
         for (auto z = 0; z < depth; z++) {
             LANCZOS_LOOP_START(0, _height, y) {
@@ -371,7 +375,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                         pixels[i - shift] = pixels[i];
                     }
                     for (auto i = 6-shift; i < 6; i++) {
-                        auto w = i + lastLeft;
+                        auto w = i + left;
                         if (w < 0) { w = 0; }
                         else if (w >= intWidth) { w = intWidth - 1; }
                         auto pixel = row[w];
@@ -383,7 +387,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                     }
                     lastLeft = left;
                     
-                    auto pixel = _sampleLanczos_a3_uint8_4(left, left + 5, intWidth, pixels);
+                    auto pixel = _sampleLanczos_a3_uint8_4(pixels);
                     *outPlane = pixel;
                     srcX += scaleX;
                     outPlane += _height;
@@ -409,7 +413,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                         pixels[i - shift] = pixels[i];
                     }
                     for (auto i = 6-shift; i < 6; i++) {
-                        auto w = i + lastLeft;
+                        auto w = i + left;
                         if (w < 0) { w = 0; }
                         else if (w >= intWidth) { w = intWidth - 1; }
                         auto pixel = row + w*3;
@@ -421,7 +425,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                     }
                     lastLeft = left;
                     
-                    auto pixel = _sampleLanczos_a3_uint8_4(left, left + 5, intWidth, pixels);
+                    auto pixel = _sampleLanczos_a3_uint8_4(pixels);
                     outPlane[0] = pixel.x;
                     outPlane[1] = pixel.y;
                     outPlane[2] = pixel.z;
@@ -449,7 +453,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                         pixels[i - shift] = pixels[i];
                     }
                     for (auto i = 6-shift; i < 6; i++) {
-                        auto w = i + lastLeft;
+                        auto w = i + left;
                         if (w < 0) { w = 0; }
                         else if (w >= intWidth) { w = intWidth - 1; }
                         auto pixel = row[w];
@@ -459,7 +463,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                     }
                     lastLeft = left;
                     
-                    auto pixel = _sampleLanczos_a3_uint8_2(left, left + 5, intWidth, pixels);
+                    auto pixel = _sampleLanczos_a3_uint8_2(pixels);
                     *outPlane = pixel;
                     srcX += scaleX;
                     outPlane += _height;
@@ -485,7 +489,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                         pixels[i - shift] = pixels[i];
                     }
                     for (auto i = 6-shift; i < 6; i++) {
-                        auto w = i + lastLeft;
+                        auto w = i + left;
                         if (w < 0) { w = 0; }
                         else if (w >= intWidth) { w = intWidth - 1; }
                         auto pixel = row[w];
@@ -493,7 +497,7 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
                     }
                     lastLeft = left;
                     
-                    auto pixel = _sampleLanczos_a3_uint8(left, left + 5, intWidth, pixels);
+                    auto pixel = _sampleLanczos_a3_uint8(pixels);
                     *outPlane = pixel;
                     srcX += scaleX;
                     outPlane += _height;
@@ -506,12 +510,16 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
     }
     // Prepare source and destination contents for further processing
     std::swap(sourceContents, destinationContents);
+#if DEBUG_PASS_TIME
     auto horizontalPassElapsed = timing_get_current_media_time() - horizontalPassStart;
     printf("Horizontal pass time: %.4fs\n", horizontalPassElapsed);
+#endif
     
     
     // Vertical pass
+#if DEBUG_PASS_TIME
     auto verticalPassStart = timing_get_current_media_time();
+#endif
     if (_pixelFormat.numComponents == 4) {
         for (auto z = 0; z < depth; z++) {
             LANCZOS_LOOP_START(0, width, y) {
@@ -589,8 +597,10 @@ void ImageContainer::_resampleLanczos3_uint8(long width, long height, long depth
     }
     // Prepare source and destination contents for further processing
     std::swap(sourceContents, destinationContents);
+#if DEBUG_PASS_TIME
     auto verticalPassElapsed = timing_get_current_media_time() - verticalPassStart;
     printf("Vertical pass time: %.4fs\n", verticalPassElapsed);
+#endif
     
     
     // Depth pass if needed
