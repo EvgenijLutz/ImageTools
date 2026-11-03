@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 21.10.26.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include "UInt8SRGBTable.hpp"
 
 

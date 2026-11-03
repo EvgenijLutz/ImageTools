@@ -19,6 +19,7 @@
 //
 // Generators for the tables are also included, for the curious. (Nothing up my sleeve!)
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>

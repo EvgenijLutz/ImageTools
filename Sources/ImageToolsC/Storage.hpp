@@ -6,6 +6,7 @@
 //
 
 #include <ImageToolsC/ImageContainer.hpp>
+#include <cstdlib>
 
 
 #define LANCZOS_CONCURRENT 1

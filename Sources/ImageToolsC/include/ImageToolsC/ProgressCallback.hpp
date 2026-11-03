@@ -58,19 +58,9 @@ struct ImageToolsError {
         _message[0] = 0;
     }
     
-    void set(ImageToolsErrorCode code, const char* fn_nonnull message fn_noescape) {
-        _code = code;
-        snprintf(_message, IMAGE_TOOLS_ERROR_MESSAGE_MAX_LENGTH, "%s", message);
-    }
+    void set(ImageToolsErrorCode code, const char* fn_nonnull message fn_noescape);
     
-    const char* fn_nonnull getMessage() const {
-        return _message;
-    }
+    const char* fn_nonnull getMessage() const;
     
-    
-    static void set(ImageToolsError* fn_nullable error fn_noescape, const char* fn_nonnull message fn_noescape) {
-        if (error) {
-            error->set(ImageToolsErrorCode::other, message);
-        }
-    }
+    static void set(ImageToolsError* fn_nullable error fn_noescape, const char* fn_nonnull message fn_noescape);
 };

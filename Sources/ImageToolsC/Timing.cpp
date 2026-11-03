@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 20.10.26.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include "Timing.hpp"
 
 #if __APPLE__

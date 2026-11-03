@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 19.10.26.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include <ImageToolsC/Common.hpp>
 #include <ImageToolsC/ImageContainer.hpp>
 #include "../Threading.hpp"

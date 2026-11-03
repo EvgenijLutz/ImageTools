@@ -3,7 +3,7 @@ Gracefully load and process images to get delightful results. _Because you also 
 This Swift Package provides a collection of tools to load and process image data. Available on `macOS 12`, `iOS 15`, `tvOS 15`, `visionOS 1` and even `watchOS 9`.
 ImageTools uses the following libraries:
 - [FastTGA](https://github.com/EvgenijLutz/FastTGA) to load _.tga_ images.
-- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) to load _JPEG_ images.
+- [JPEGTurbo](https://github.com/EvgenijLutz/JPEGTurbo) (precompiled [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo)) v3.2.1 to load _JPEG_ images.
 - [LibPNG](https://github.com/EvgenijLutz/LibPNG) (precompiled [libpng](https://github.com/pnggroup/libpng)) to load and save _.png_ images.
 - [tinyexr](https://github.com/syoyo/tinyexr) v3.2.0 (vendored) to load _.exr_ images.
 - [stb](https://github.com/nothings/stb) 's stb_image.h v2.3 (vendored) to load other commonly used image files like _.jpg_, _.png_, _.tga_, _.bmp_, _.psd_, _.gif_, _.hdr_ and _.pic_.
@@ -37,7 +37,7 @@ https://github.com/EvgenijLutz/ImageTools.git
 Alternatively, add the package as a dependency in your `Package.swift` file:
 ```swift
 dependencies: [
-    .package(url: "https://github.com/EvgenijLutz/ImageTools.git", from: "1.0.18")
+    .package(url: "https://github.com/EvgenijLutz/ImageTools.git", from: "1.0.19")
 ]
 ```
 

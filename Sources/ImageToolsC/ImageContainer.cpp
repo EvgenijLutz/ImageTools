@@ -5,15 +5,19 @@
 //  Created by Evgenij Lutz on 30.10.25.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include <ImageToolsC/ImageContainer.hpp>
 #include <FastTGAC/FastTGAC.hpp>
 #include <JPEGTurboC/JPEGTurboC.hpp>
 #include <LibPNGC/LibPNGC.hpp>
 #include <LCMS2C/LCMS2C.hpp>
-#include "Threading.hpp"
-#include "sRGB/UInt8SRGBTable.hpp"
-#include "Timing.hpp"
 #include <assert.h>
+#include <cstdlib>
+#include <algorithm>
+
+#include "sRGB/UInt8SRGBTable.hpp"
+#include "Threading.hpp"
+#include "Timing.hpp"
 
 #include "stb/stb_image.h"
 #include "tinyexr/tinyexr.h"

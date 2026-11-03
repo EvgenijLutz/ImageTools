@@ -5,7 +5,10 @@
 //  Created by Evgenij Lutz on 27.01.26.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include "UInt8SRGBTable.hpp"
+#include <limits>
+#include <algorithm>
 
 
 uint8_srgb_linear_value uint8Table[256] = {

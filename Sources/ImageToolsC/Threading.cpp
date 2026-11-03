@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 28.01.26.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #include "Threading.hpp"
 
 #include <semaphore>
